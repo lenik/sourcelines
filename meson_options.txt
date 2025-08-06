@@ -1,0 +1,9 @@
+option('bash_completion_dir',
+  type: 'string',
+  value: '',
+  description: 'Directory for bash completion scripts (default: $datadir/bash-completion/completions)')
+
+option('man_dir',
+  type: 'string',
+  value: '',
+  description: 'Directory for man pages (default: $datadir/man/man1)')

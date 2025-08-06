@@ -1,0 +1,13 @@
+Source: wcc
+Section: utils
+Priority: optional
+Maintainer: Lenik <lenik@bodz.net>
+Build-Depends: debhelper (>= 9), cargo, rustc
+Standards-Version: 4.5.0
+Homepage: https://github.com/lenik/wcc
+
+Package: wcc
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Source code statistics counter
+ A Rust CLI tool to count lines of code, words, chars, and bytes for source files and directories.
