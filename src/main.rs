@@ -201,7 +201,34 @@ fn main() {
                 let path = Path::new(arg);
                 let (_, lang_map) =
                     process_dir_lang_filtered(path, recursive, &exclude_set, include_set.as_ref());
-                for (lang, stats) in lang_map.iter() {
+
+                // Sort grouped (per-language) results by the first visible column in descending order
+                let first_col_value = |s: &Stats| -> usize {
+                    if show_actual_klocs {
+                        s.actual_loc
+                    } else if show_actual_loc {
+                        s.actual_loc
+                    } else if show_raw_klocs {
+                        s.raw_loc
+                    } else if show_raw_loc {
+                        s.raw_loc
+                    } else if show_words {
+                        s.words
+                    } else if show_chars {
+                        s.chars
+                    } else {
+                        s.bytes
+                    }
+                };
+
+                let mut items: Vec<(&String, &Stats)> = lang_map.iter().collect();
+                items.sort_by(|(la, sa), (lb, sb)| {
+                    let ka = first_col_value(sa);
+                    let kb = first_col_value(sb);
+                    kb.cmp(&ka).then_with(|| la.cmp(lb))
+                });
+
+                for (lang, stats) in items.into_iter() {
                     print_stats(
                         stats,
                         lang,
