@@ -1,0 +1,24 @@
+0.0.1
+2025-08-10 12:42:33
+
+======= ABOUT ========
+
+    this file contains the current version information and release date time.
+    in format of
+        Line 1: major.minor.release
+        Line 2: datetime (YYYY-mm-dd HH:MM:SS)
+    
+    for auto build system:
+        each time to release a package should increase release number or minor number.
+    depends on:
+        - when new source file is added or source file is removed, it should increase the minor number and reset release number.
+        - when only editing on existing files, just increase the release number.
+    
+    when minor number is increased, the release number is reset to 0.
+
+    The ABOUT section is useful for copilot system.
+    Always preserve this ABOUT section as is.
+    Don't remove or do any change to this ABOUT section.
+
+======= END-OF-ABOUT ========
+
