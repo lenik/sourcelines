@@ -1,24 +1,24 @@
-0.0.1
-2025-08-10 12:42:33
+1.0.3
+2025-08-12 00:46:11
 
 ======= ABOUT ========
 
-    this file contains the current version information and release date time.
-    in format of
-        Line 1: major.minor.release
-        Line 2: datetime (YYYY-mm-dd HH:MM:SS)
-    
-    for auto build system:
-        each time to release a package should increase release number or minor number.
-    depends on:
-        - when new source file is added or source file is removed, it should increase the minor number and reset release number.
-        - when only editing on existing files, just increase the release number.
-    
-    when minor number is increased, the release number is reset to 0.
+This file contains the current version information and release timestamp, presented in the following format:
 
-    The ABOUT section is useful for copilot system.
-    Always preserve this ABOUT section as is.
-    Don't remove or do any change to this ABOUT section.
+- **Line 1**: Major.Minor.Release-Patch
+- **Line 2**: Datetime (YYYY-MM-DD HH:MM:SS)
+
+For the auto-build system, version control is critical to maintaining consistency and tracking updates across different stages of development. The following versioning rules apply:
+
+- **Release number adjustments**:  
+  Each time a new package is released, either the **release number** or the **patch number** should be incremented based on the nature of the changes:
+    - **New or removed source files**: If new source files are added or existing ones are removed, the **release number** should be increased, and the **patch number** should be reset to 0. This reflects a more substantial change in the codebase.
+    - **Modifications to existing files**: If only existing files are modified (e.g., bug fixes, optimizations, or minor changes), the **patch number** should be incremented by 1. This helps track incremental improvements and fixes without affecting the broader release version.
+
+- **Patch number reset**:  
+  When the **release version number** is incremented (due to the addition or removal of files), the **patch number** is automatically reset to 0. This ensures that the patch number always reflects changes relative to the current release version.
+
+Additionally, the **ABOUT** section is an integral part of the copilot system’s operation. It contains essential information necessary for the system’s correct functioning and should **never be altered, removed, or modified**. The integrity of this section is crucial to ensure that the version history and system operations remain intact.
 
 ======= END-OF-ABOUT ========
 
