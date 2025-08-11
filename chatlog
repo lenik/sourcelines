@@ -1,0 +1,12 @@
+
+Update meson script. currently it won't work for a clean build which could be required in debuild.
+
+Add build script:
+
+    update release-version.txt
+    add debian changelog log entry
+    run debuild to build the package
+    run `dpkg -i` to install the deb package just built.
+    run `dput -f bodz` to upload the deb package just built.
+
+

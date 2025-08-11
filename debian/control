@@ -2,9 +2,10 @@ Source: wcc
 Section: utils
 Priority: optional
 Maintainer: Lenik <lenik@bodz.net>
-Build-Depends: debhelper (>= 9), cargo, rustc
-Standards-Version: 4.5.0
+Build-Depends: debhelper-compat (= 13), meson, ninja-build, cargo, rustc, pandoc
+Standards-Version: 4.6.2
 Homepage: https://github.com/lenik/wcc
+Rules-Requires-Root: no
 
 Package: wcc
 Architecture: any
