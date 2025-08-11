@@ -2,7 +2,7 @@ Source: wcc
 Section: utils
 Priority: optional
 Maintainer: Lenik <lenik@bodz.net>
-Build-Depends: debhelper-compat (= 13), meson, ninja-build, cargo, rustc, pandoc
+Build-Depends: debhelper-compat (= 13), meson, ninja-build, cargo, rustc, pandoc, git
 Standards-Version: 4.6.2
 Homepage: https://github.com/lenik/wcc
 Rules-Requires-Root: no
