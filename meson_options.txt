@@ -7,3 +7,8 @@ option('man_dir',
   type: 'string',
   value: '',
   description: 'Directory for man pages (default: $datadir/man/man1)')
+
+option('build_manpage',
+  type: 'boolean',
+  value: true,
+  description: 'Build and install the man page (requires pandoc)')

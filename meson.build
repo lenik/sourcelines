@@ -23,6 +23,7 @@ cargo_build = custom_target(
         source_root + '/cargo-build.sh',
         source_root,
         cargo_target_dir,
+        build_root,
         '@OUTPUT@',
     ],
     output: 'wcc',
@@ -35,15 +36,16 @@ cargo_build = custom_target(
 
 # No direct install from the source tree target directory; installation is handled by the custom_target above.
 
-# Generate man page from README.md if pandoc is available
+# Generate man page from README.md (enabled by default)
 readme_md = files('README.md')
-pandoc = find_program('pandoc', required: false)
-if pandoc.found()
+build_manpage = get_option('build_manpage')
+pandoc = find_program('pandoc', required: build_manpage)
+if build_manpage and pandoc.found()
     wcc_man = custom_target(
         'wcc-man',
         command: [
             pandoc,
-            '--shift-heading-level-by=1',
+            '--shift-heading-level-by=2',
             '-s',
             '-t', 'man',
             '@INPUT@',

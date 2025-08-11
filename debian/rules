@@ -1,5 +1,10 @@
 #!/usr/bin/make -f
 
+DESTDIR=$(CURDIR)/debian/wcc
+prefix=/usr
+bindir=$(prefix)/bin
+mandir=$(prefix)/share/man
+
 %:
 	dh $@
 
@@ -7,14 +12,11 @@ override_dh_auto_build:
 	cargo build --release
 
 override_dh_auto_install:
-	install -Dm755 target/release/wcc $(DESTDIR)/usr/bin/wcc
-	install -Dm644 wcc.1 $(DESTDIR)/usr/share/man/man1/wcc.1
+	install -Dm755 target/release/wcc $(DESTDIR)$(bindir)/wcc
+	install -Dm644 build/wcc.1 $(DESTDIR)$(mandir)/man1/wcc.1
 
 # Build the Meson source tarball once and reuse it for dpkg-source
 override_dh_buildsource:
-	# Ensure a Meson build directory exists
 	[ -d debian/meson-build ] || meson setup debian/meson-build
-	# Build the 'tarball' alias from meson.build (creates wcc-<version>.tar.gz)
 	meson compile -C debian/meson-build tarball
-	# Proceed with building the Debian source package
-	dh_buildsource
+	
