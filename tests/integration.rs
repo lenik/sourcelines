@@ -2,10 +2,10 @@ use std::process::Command;
 
 #[test]
 fn test_python_file() {
-    let output = Command::new(env!("CARGO_BIN_EXE_wcc"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sourcelines"))
         .arg("tests/testdata/simple.py")
         .output()
-        .expect("failed to run wcc");
+        .expect("failed to run sourcelines");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("python"));
     assert!(stdout.contains("simple.py"));
@@ -16,10 +16,10 @@ fn test_python_file() {
 
 #[test]
 fn test_c_file() {
-    let output = Command::new(env!("CARGO_BIN_EXE_wcc"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sourcelines"))
         .arg("tests/testdata/simple.c")
         .output()
-        .expect("failed to run wcc");
+        .expect("failed to run sourcelines");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("c"));
     assert!(stdout.contains("simple.c"));
@@ -29,10 +29,10 @@ fn test_c_file() {
 
 #[test]
 fn test_shell_file() {
-    let output = Command::new(env!("CARGO_BIN_EXE_wcc"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sourcelines"))
         .arg("tests/testdata/simple.sh")
         .output()
-        .expect("failed to run wcc");
+        .expect("failed to run sourcelines");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shell"));
     assert!(stdout.contains("simple.sh"));
@@ -42,10 +42,10 @@ fn test_shell_file() {
 
 #[test]
 fn test_txt_file() {
-    let output = Command::new(env!("CARGO_BIN_EXE_wcc"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sourcelines"))
         .arg("tests/testdata/simple.txt")
         .output()
-        .expect("failed to run wcc");
+        .expect("failed to run sourcelines");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("text"));
     assert!(stdout.contains("simple.txt"));

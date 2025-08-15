@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-DESTDIR=$(CURDIR)/debian/wcc
+DESTDIR=$(CURDIR)/debian/sourcelines
 prefix=/usr
 bindir=$(prefix)/bin
 mandir=$(prefix)/share/man
@@ -12,8 +12,8 @@ override_dh_auto_build:
 	cargo build --release
 
 override_dh_auto_install:
-	install -Dm755 target/release/wcc $(DESTDIR)$(bindir)/wcc
-	install -Dm644 build/wcc.1 $(DESTDIR)$(mandir)/man1/wcc.1
+	install -Dm755 target/release/sourcelines $(DESTDIR)$(bindir)/sourcelines
+	install -Dm644 build/sourcelines.1 $(DESTDIR)$(mandir)/man1/sourcelines.1
 
 # Build the Meson source tarball once and reuse it for dpkg-source
 override_dh_buildsource:

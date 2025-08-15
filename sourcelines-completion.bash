@@ -1,5 +1,5 @@
-# wcc bash completion
-_wcc() {
+# sourcelines bash completion
+_sourcelines() {
     local cur prev opts
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -13,4 +13,4 @@ _wcc() {
     fi
 }
 
-complete -F _wcc wcc
+complete -F _sourcelines sourcelines

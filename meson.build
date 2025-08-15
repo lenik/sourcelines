@@ -1,6 +1,6 @@
-# wcc - a source code statistics tool
+# sourcelines - a source code statistics tool
 project(
-    'wcc',
+    'sourcelines',
     'rust',
     version: run_command(
         [
@@ -26,7 +26,7 @@ cargo_build = custom_target(
         build_root,
         '@OUTPUT@',
     ],
-    output: 'wcc',
+    output: 'sourcelines',
     depend_files: files('src/lib.rs', 'src/main.rs', 'Cargo.toml'),
     install: true,
     install_dir: get_option('bindir'),
@@ -41,8 +41,8 @@ readme_md = files('README.md')
 build_manpage = get_option('build_manpage')
 pandoc = find_program('pandoc', required: build_manpage)
 if build_manpage and pandoc.found()
-    wcc_man = custom_target(
-        'wcc-man',
+    sourcelines_man = custom_target(
+        'sourcelines-man',
         command: [
             pandoc,
             '--shift-heading-level-by=2',
@@ -52,7 +52,7 @@ if build_manpage and pandoc.found()
             '-o', '@OUTPUT@',
         ],
         input: readme_md,
-        output: 'wcc.1',
+        output: 'sourcelines.1',
         install: true,
         install_dir: get_option('man_dir') == '' ? join_paths(get_option('datadir'), 'man/man1') : get_option('man_dir'),
         depend_files: files('README.md'),
@@ -63,10 +63,10 @@ endif
 
 # Install bash completion script
 install_data(
-    'wcc-completion.bash',
+    'sourcelines-completion.bash',
     install_dir: get_option('bash_completion_dir') == '' ? join_paths(get_option('datadir'), 'bash-completion/completions') : get_option('bash_completion_dir'),
     install_tag: 'data',
-    rename: 'wcc',
+    rename: 'sourcelines',
 )
 
 tarball_name = meson.project_name() + '-' + meson.project_version() + '.tar.gz'

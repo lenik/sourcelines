@@ -1,6 +1,6 @@
-# wcc
+# sourcelines
 
-`wcc` is a Rust CLI tool to count source code statistics: actual lines of code (excluding empty lines and pure comment lines), raw lines, words, characters, and bytes for each file or directory argument. It supports recursive directory traversal and flexible output options.
+`sourcelines` is a Rust CLI tool to count source code statistics: actual lines of code (excluding empty lines and pure comment lines), raw lines, words, characters, and bytes for each file or directory argument. It supports recursive directory traversal and flexible output options.
 
 ## Features
 - Counts: actual lines of code, raw lines, words, characters, bytes
@@ -13,7 +13,7 @@
 ## Usage
 
 ```sh
-wcc [OPTIONS] FILES...
+sourcelines [OPTIONS] FILES...
 ```
 
 
@@ -51,8 +51,8 @@ For summary line (with `-s`):
 ## Example
 
 ```sh
-wcc -r -l -L -w src/
-wcc -k -K -c -b file.rs
+sourcelines -r -l -L -w src/
+sourcelines -k -K -c -b file.rs
 ```
 
 ## Build
@@ -77,13 +77,13 @@ meson install -C builddir
 ```
 
 This will install:
-- The `wcc` binary
-- The man page to `DATADIR/man/man1/wcc.1`
-- Bash completion to `DATADIR/bash-completion/completions/wcc`
+- The `sourcelines` binary
+- The man page to `DATADIR/man/man1/sourcelines.1`
+- Bash completion to `DATADIR/bash-completion/completions/sourcelines`
 
 ## Manpage
 
-The markdown doc (`README.md`) is compiled to a man page (`wcc.1`) using `pandoc` in the build script.
+The markdown doc (`README.md`) is compiled to a man page (`sourcelines.1`) using `pandoc` in the build script.
 
 ## License
 

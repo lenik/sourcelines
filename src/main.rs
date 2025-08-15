@@ -4,7 +4,7 @@ use std::path::Path;
 
 use clap::{ArgGroup, Parser};
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use wcc::{CommentSyntax, detect_comment_syntax, detect_language};
+use sourcelines::{CommentSyntax, detect_comment_syntax, detect_language};
 
 #[derive(Default, Debug, Clone)]
 struct Stats {
@@ -17,11 +17,11 @@ struct Stats {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "wcc",
+    name = "sourcelines",
     version,
     about = "Count source code statistics: actual lines of code, raw lines, words, chars, bytes.",
     long_about = None,
-    after_help = "For more details, see the man page or wcc.1.md."
+    after_help = "For more details, see the man page or sourcelines.1.md."
 )]
 #[command(group(ArgGroup::new("columns").multiple(true)))]
 struct Cli {
