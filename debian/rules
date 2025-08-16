@@ -1,22 +1,28 @@
 #!/usr/bin/make -f
 
+export
+
+CARGO_TARGET_DIR=$(HOME)/.cargo/target
+RUSTC_WRAPPER=$(HOME)/.cargo/bin/sccache
+
 DESTDIR=$(CURDIR)/debian/sourcelines
 prefix=/usr
 bindir=$(prefix)/bin
 mandir=$(prefix)/share/man
 
+ARCH=$(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+objdir=$(CURDIR)/obj-$(ARCH)
+
+# Get version from vercomp (must run in project dir)
+#VER := $(shell cd $(CURDIR) && vercomp)
+# Increment build number for each build
+#BUILDNUM := $(shell cd $(CURDIR) && vercomp -i commit)
+
 %:
 	dh $@
-
-override_dh_auto_build:
-	cargo build --release
-
-override_dh_auto_install:
-	install -Dm755 target/release/sourcelines $(DESTDIR)$(bindir)/sourcelines
-	install -Dm644 build/sourcelines.1 $(DESTDIR)$(mandir)/man1/sourcelines.1
 
 # Build the Meson source tarball once and reuse it for dpkg-source
 override_dh_buildsource:
 	[ -d debian/meson-build ] || meson setup debian/meson-build
 	meson compile -C debian/meson-build tarball
-	
+

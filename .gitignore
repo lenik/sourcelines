@@ -131,7 +131,10 @@ stats/
 target/
 v-store
 
+.rustc_info.json
+
 /.github
 /.vscode
 
 /sourcelines
+

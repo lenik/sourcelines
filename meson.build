@@ -15,16 +15,18 @@ project(
 source_root = meson.project_source_root()
 build_root = meson.project_build_root()
 
-# Use Cargo to build into the build directory (always run this)
-cargo_target_dir = join_paths(build_root, 'cargo-target')
+cargoEx = find_program('cargo-ex', required: true)
+
 cargo_build = custom_target(
     'cargo-build',
     command: [
-        source_root + '/cargo-build.sh',
-        source_root,
-        cargo_target_dir,
-        build_root,
-        '@OUTPUT@',
+        cargoEx,
+        '-Z', 'unstable-options', '-C', source_root,
+        'build',
+        '-o', 'sourcelines',
+        '--copy-to', build_root,
+        '--release',
+        '--target-dir', build_root,
     ],
     output: 'sourcelines',
     depend_files: files('src/lib.rs', 'src/main.rs', 'Cargo.toml'),
