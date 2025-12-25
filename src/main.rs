@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::{self, BufRead, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use clap::{ArgGroup, Parser};
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -13,6 +14,143 @@ struct Stats {
     words: usize,
     chars: usize,
     bytes: usize,
+}
+
+#[derive(Debug, Clone)]
+struct IgnorePattern {
+    pattern: String,
+    is_negation: bool, // Patterns starting with ! negate previous ignores
+    is_dir_only: bool, // Patterns ending with / match only directories
+}
+
+#[derive(Debug)]
+struct DirObject {
+    path: PathBuf,
+    ignore_patterns: Vec<IgnorePattern>,
+    parent: Option<Rc<DirObject>>,
+}
+
+impl DirObject {
+    fn new(path: PathBuf, parent: Option<Rc<DirObject>>) -> Self {
+        DirObject {
+            path,
+            ignore_patterns: Vec::new(),
+            parent,
+        }
+    }
+
+    fn load_ignore_file(&mut self, ignore_file_name: &str) {
+        let ignore_path = self.path.join(ignore_file_name);
+        if let Ok(content) = fs::read_to_string(&ignore_path) {
+            for line in content.lines() {
+                let line = line.trim();
+                // Skip empty lines and comments
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                
+                let is_negation = line.starts_with('!');
+                let pattern_str = if is_negation { &line[1..] } else { line };
+                let pattern_str = pattern_str.trim();
+                if pattern_str.is_empty() {
+                    continue;
+                }
+                
+                let is_dir_only = pattern_str.ends_with('/');
+                let pattern = if is_dir_only {
+                    pattern_str[..pattern_str.len() - 1].to_string()
+                } else {
+                    pattern_str.to_string()
+                };
+                
+                self.ignore_patterns.push(IgnorePattern {
+                    pattern,
+                    is_negation,
+                    is_dir_only,
+                });
+            }
+        }
+    }
+
+    fn include_test(&self, file_path: &Path, is_dir: bool) -> bool {
+        // Get relative path from this directory
+        let rel_path = match file_path.strip_prefix(&self.path) {
+            Ok(p) => p,
+            Err(_) => return true, // If we can't get relative path, include it
+        };
+        
+        // Convert to string for pattern matching
+        let path_str = rel_path.to_string_lossy();
+        let path_str = path_str.replace('\\', "/"); // Normalize path separators
+        
+        // Check patterns in order (last match wins)
+        let mut included = true;
+        let mut matched = false;
+        for pattern in &self.ignore_patterns {
+            if pattern.is_dir_only && !is_dir {
+                continue;
+            }
+            
+            if matches_pattern(&pattern.pattern, &path_str, is_dir) {
+                matched = true;
+                if pattern.is_negation {
+                    included = true;
+                } else {
+                    included = false;
+                }
+            }
+        }
+        
+        // If not matched in this directory, check parent
+        if !matched {
+            if let Some(ref parent) = self.parent {
+                return parent.include_test(file_path, is_dir);
+            }
+        }
+        
+        included
+    }
+}
+
+fn matches_pattern(pattern: &str, path: &str, _is_dir: bool) -> bool {
+    // Handle simple patterns
+    if pattern == "*" {
+        return true;
+    }
+    
+    // Convert gitignore pattern to glob pattern
+    let mut glob_pattern = pattern.to_string();
+    
+    // If pattern doesn't start with /, it can match anywhere
+    if !glob_pattern.starts_with('/') {
+        glob_pattern = format!("**/{}", glob_pattern);
+    } else {
+        glob_pattern = glob_pattern[1..].to_string();
+    }
+    
+    // Handle ** patterns
+    glob_pattern = glob_pattern.replace("**/", "**");
+    glob_pattern = glob_pattern.replace("/**", "**");
+    
+    // Try to match using glob
+    if let Ok(glob) = Glob::new(&glob_pattern) {
+        if glob.compile_matcher().is_match(path) {
+            return true;
+        }
+    }
+    
+    // Fallback to simple string matching for common cases
+    if pattern.contains('*') {
+        // Simple wildcard matching
+        let parts: Vec<&str> = pattern.split('*').collect();
+        if parts.len() == 2 {
+            return path.starts_with(parts[0]) && path.ends_with(parts[1]);
+        }
+    } else if pattern == path || path.ends_with(&format!("/{}", pattern)) {
+        return true;
+    }
+    
+    false
 }
 
 #[derive(Parser, Debug)]
@@ -64,6 +202,12 @@ struct Cli {
     /// Follow symlinks when recursively processing directories
     #[arg(short = 'L', long = "follow-symlinks")]
     follow_symlinks: bool,
+    /// Parse ignore list files (like .gitignore) [default: enabled]
+    #[arg(short = 'i', long = "ignorelist", default_value_t = true)]
+    ignorelist: bool,
+    /// Do not parse ignore list files
+    #[arg(short = 'I', long = "no-ignorelist")]
+    no_ignorelist: bool,
     /// Show word count
     #[arg(short = 'w', long = "words", group = "columns")]
     words: bool,
@@ -99,6 +243,7 @@ fn main() {
     let verbose = cli.verbose;
     let color = cli.color;
     let follow_symlinks = cli.follow_symlinks;
+    let use_ignorelist = cli.ignorelist && !cli.no_ignorelist;
     let files = &cli.files;
 
     // Default exclude patterns
@@ -172,8 +317,15 @@ fn main() {
     for arg in files {
         let path = Path::new(arg);
         if path.is_dir() {
+            let dir_obj = if use_ignorelist {
+                let mut dir_obj = DirObject::new(path.to_path_buf(), None);
+                dir_obj.load_ignore_file(".gitignore");
+                Some(Rc::new(dir_obj))
+            } else {
+                None
+            };
             let (dir_stats, lang_map) =
-                process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref());
+                process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref(), dir_obj.as_ref());
             sum = add_stats(sum, dir_stats.clone());
             // Save per-language sums for verbose mode
             for (lang, stats) in lang_map.iter() {
@@ -209,8 +361,15 @@ fn main() {
             if *is_dir && verbose {
                 // For directories, print per-language sum
                 let path = Path::new(arg);
+                let dir_obj = if use_ignorelist {
+                    let mut dir_obj = DirObject::new(path.to_path_buf(), None);
+                    dir_obj.load_ignore_file(".gitignore");
+                    Some(Rc::new(dir_obj))
+                } else {
+                    None
+                };
                 let (_, lang_map) =
-                    process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref());
+                    process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref(), dir_obj.as_ref());
 
                 // Sort grouped (per-language) results by the first visible column in descending order
                 let first_col_value = |s: &Stats| -> usize {
@@ -292,10 +451,22 @@ fn main() {
         follow_symlinks: bool,
         exclude_set: &GlobSet,
         include_set: Option<&GlobSet>,
+        parent_dir_obj: Option<&Rc<DirObject>>,
     ) -> (Stats, std::collections::HashMap<String, Stats>) {
         let mut total = Stats::default();
         let mut lang_map: std::collections::HashMap<String, Stats> =
             std::collections::HashMap::new();
+        
+        // Create DirObject for this directory if ignorelist is enabled
+        let dir_obj = if let Some(parent) = parent_dir_obj {
+            // Check if ignorelist is enabled (parent exists means it's enabled)
+            let mut dir_obj = DirObject::new(path.to_path_buf(), Some(parent.clone()));
+            dir_obj.load_ignore_file(".gitignore");
+            Some(Rc::new(dir_obj))
+        } else {
+            None
+        };
+        
         let entries = match fs::read_dir(path) {
             Ok(e) => e,
             Err(_) => return (total, lang_map),
@@ -308,6 +479,15 @@ fn main() {
             if is_excluded {
                 continue;
             }
+            
+            // Check ignore list if enabled
+            if let Some(ref dir_obj) = dir_obj {
+                let is_dir_entry = p.is_dir();
+                if !dir_obj.include_test(&p, is_dir_entry) {
+                    continue;
+                }
+            }
+            
             // Check if it's a symlink
             let is_symlink = fs::symlink_metadata(&p)
                 .map(|m| m.file_type().is_symlink())
@@ -320,7 +500,7 @@ fn main() {
             
             if recursive && p.is_dir() {
                 let (dir_stats, dir_lang_map) =
-                    process_dir_lang_filtered(&p, true, follow_symlinks, exclude_set, include_set);
+                    process_dir_lang_filtered(&p, true, follow_symlinks, exclude_set, include_set, dir_obj.as_ref());
                 total = add_stats(total, dir_stats.clone());
                 for (lang, stats) in dir_lang_map {
                     let entry = lang_map.entry(lang).or_default();
