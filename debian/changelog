@@ -1,3 +1,9 @@
+sourcelines (1.1.12) testing; urgency=medium
+
+  * Update bash completion with all report format options
+
+ -- Lenik (谢继雷) <lenik@bodz.net>  Thu, 25 Dec 2025 15:54:05 +0800
+
 sourcelines (1.1.11) testing; urgency=medium
 
   * Add multiple report format options: --text, --html, --latex, --pdf, --markdown
