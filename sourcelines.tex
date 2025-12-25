@@ -1,0 +1,48 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\title{Source Code Statistics Report}
+\author{sourcelines}
+\date{\today}
+\begin{document}
+\maketitle
+
+\section{Summary}
+\begin{itemize}
+  \item \textbf{Actual Lines of Code:} 2707
+  \item \textbf{Raw Lines of Code:} 3182
+  \item \textbf{Words:} 13993
+  \item \textbf{Characters:} 121261
+  \item \textbf{Bytes:} 121265
+\end{itemize}
+
+\section{Per-Language Breakdown}
+\begin{longtable}{l
+rrrrr}
+\toprule
+  \textbf{Language} & \textbf{Actual LOC} & \textbf{Raw LOC} & \textbf{Words} & \textbf{Chars} & \textbf{Bytes} \\
+\midrule
+\endfirsthead
+\multicolumn{6}{c}{\textit{Continued from previous page}} \\
+\toprule
+  \textbf{Language} & \textbf{Actual LOC} & \textbf{Raw LOC} & \textbf{Words} & \textbf{Chars} & \textbf{Bytes} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+  rust & 1738 & 1956 & 6447 & 70021 & 70021 \\
+  unknown & 707 & 840 & 5888 & 37277 & 37277 \\
+  build & 132 & 182 & 570 & 5988 & 5988 \\
+  md & 69 & 112 & 621 & 4562 & 4562 \\
+  text & 30 & 43 & 311 & 2270 & 2274 \\
+  shell & 14 & 22 & 88 & 684 & 684 \\
+  toml & 10 & 11 & 31 & 213 & 213 \\
+  c & 5 & 8 & 21 & 133 & 133 \\
+  python & 2 & 8 & 16 & 113 & 113 \\
+\end{longtable}
+\end{document}

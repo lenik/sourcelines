@@ -55,6 +55,78 @@ sourcelines_txt = custom_target(
     build_always_stale: true,
 )
 
+# Generate sourcelines.html report
+sourcelines_html = custom_target(
+    'sourcelines-html',
+    command: [
+        'sh', '-c',
+        'EXE="@0@"; OUT="@1@"; SRCDIR="@2@"; if [ -x "$EXE" ]; then cd "$SRCDIR" && "$EXE" --html . > "$OUT" 2>"$OUT.err" || (echo "Error: sourcelines --html failed. Check $OUT.err" >&2; touch "$OUT"); fi'.format(
+            build_root / 'sourcelines',
+            source_root / 'sourcelines.html',
+            source_root
+        ),
+    ],
+    output: 'sourcelines.html',
+    depends: cargo_build,
+    build_by_default: true,
+    build_always_stale: true,
+)
+
+# Generate sourcelines.md report
+sourcelines_md = custom_target(
+    'sourcelines-md',
+    command: [
+        'sh', '-c',
+        'EXE="@0@"; OUT="@1@"; SRCDIR="@2@"; if [ -x "$EXE" ]; then cd "$SRCDIR" && "$EXE" --markdown . > "$OUT" 2>"$OUT.err" || (echo "Error: sourcelines --markdown failed. Check $OUT.err" >&2; touch "$OUT"); fi'.format(
+            build_root / 'sourcelines',
+            source_root / 'sourcelines.md',
+            source_root
+        ),
+    ],
+    output: 'sourcelines.md',
+    depends: cargo_build,
+    build_by_default: true,
+    build_always_stale: true,
+)
+
+# Generate sourcelines.tex report
+sourcelines_tex = custom_target(
+    'sourcelines-tex',
+    command: [
+        'sh', '-c',
+        'EXE="@0@"; OUT="@1@"; SRCDIR="@2@"; if [ -x "$EXE" ]; then cd "$SRCDIR" && "$EXE" --latex . > "$OUT" 2>"$OUT.err" || (echo "Error: sourcelines --latex failed. Check $OUT.err" >&2; touch "$OUT"); fi'.format(
+            build_root / 'sourcelines',
+            source_root / 'sourcelines.tex',
+            source_root
+        ),
+    ],
+    output: 'sourcelines.tex',
+    depends: cargo_build,
+    build_by_default: true,
+    build_always_stale: true,
+)
+
+# Generate sourcelines.pdf report (requires pdflatex)
+pdflatex = find_program('pdflatex', required: false)
+if pdflatex.found()
+    sourcelines_pdf = custom_target(
+        'sourcelines-pdf',
+        command: [
+            'sh', '-c',
+            'EXE="@0@"; OUT="@1@"; SRCDIR="@2@"; PDFLATEX="@3@"; if [ -x "$EXE" ]; then cd "$SRCDIR" && "$EXE" --pdf . > "$OUT" 2>"$OUT.err" || (echo "Error: sourcelines --pdf failed. Check $OUT.err" >&2; touch "$OUT"); fi'.format(
+                build_root / 'sourcelines',
+                source_root / 'sourcelines.pdf',
+                source_root,
+                pdflatex.full_path()
+            ),
+        ],
+        output: 'sourcelines.pdf',
+        depends: cargo_build,
+        build_by_default: true,
+        build_always_stale: true,
+    )
+endif
+
 # No direct install from the source tree target directory; installation is handled by the custom_target above.
 
 # Generate man page from README.md (enabled by default)

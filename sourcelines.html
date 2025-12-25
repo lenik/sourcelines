@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Source Code Statistics Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h1 { color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }
+    h2 { color: #555; margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background-color: #4CAF50; color: white; font-weight: bold; }
+    tr:hover { background-color: #f5f5f5; }
+    .summary { background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .summary-item { margin: 8px 0; font-size: 16px; }
+    .summary-label { font-weight: bold; color: #2e7d32; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Source Code Statistics Report</h1>
+    <h2>Summary</h2>
+    <div class="summary">
+      <div class="summary-item"><span class="summary-label">Actual Lines of Code:</span> 2707</div>
+      <div class="summary-item"><span class="summary-label">Raw Lines of Code:</span> 3182</div>
+      <div class="summary-item"><span class="summary-label">Words:</span> 13993</div>
+      <div class="summary-item"><span class="summary-label">Characters:</span> 121261</div>
+      <div class="summary-item"><span class="summary-label">Bytes:</span> 121265</div>
+    </div>
+    <h2>Per-Language Breakdown</h2>
+    <table>
+      <thead>
+        <tr><th>Language</th><th>Actual LOC</th><th>Raw LOC</th><th>Words</th><th>Chars</th><th>Bytes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>rust</td><td>1738</td><td>1956</td><td>6447</td><td>70021</td><td>70021</td></tr>
+        <tr><td>unknown</td><td>707</td><td>840</td><td>5888</td><td>37277</td><td>37277</td></tr>
+        <tr><td>build</td><td>132</td><td>182</td><td>570</td><td>5988</td><td>5988</td></tr>
+        <tr><td>md</td><td>69</td><td>112</td><td>621</td><td>4562</td><td>4562</td></tr>
+        <tr><td>text</td><td>30</td><td>43</td><td>311</td><td>2270</td><td>2274</td></tr>
+        <tr><td>shell</td><td>14</td><td>22</td><td>88</td><td>684</td><td>684</td></tr>
+        <tr><td>toml</td><td>10</td><td>11</td><td>31</td><td>213</td><td>213</td></tr>
+        <tr><td>c</td><td>5</td><td>8</td><td>21</td><td>133</td><td>133</td></tr>
+        <tr><td>python</td><td>2</td><td>8</td><td>16</td><td>113</td><td>113</td></tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
