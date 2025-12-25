@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Read};
 use std::path::Path;
 
 use clap::{ArgGroup, Parser};
@@ -468,8 +468,31 @@ fn add_stats(a: Stats, b: Stats) -> Stats {
     }
 }
 
+fn is_binary_file(path: &Path) -> bool {
+    // Read first 8KB to check for binary content
+    const SAMPLE_SIZE: usize = 8192;
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false, // If we can't open it, assume it's not binary
+    };
+    let mut buffer = vec![0u8; SAMPLE_SIZE];
+    match file.read(&mut buffer) {
+        Ok(n) => {
+            // Check for null bytes in the sample
+            buffer[..n].contains(&0)
+        }
+        Err(_) => false, // If we can't read it, assume it's not binary
+    }
+}
+
 fn process_file(path: &Path) -> Stats {
     let mut stats = Stats::default();
+    
+    // Skip binary files
+    if is_binary_file(path) {
+        return stats;
+    }
+    
     let lang = detect_language(path);
     let comment_syntax = detect_comment_syntax(&lang, path);
     let file = match File::open(path) {
