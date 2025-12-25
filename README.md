@@ -10,6 +10,7 @@
 - Symlink handling (`-L`/`--follow-symlinks` to follow symlinks, skipped by default)
 - Ignore list support (`-i`/`--ignorelist` to parse .gitignore files, enabled by default; `-I`/`--no-ignorelist` to disable)
 - Binary file detection (automatically skips binary files)
+- Multiple report formats: text, HTML, LaTeX, PDF, Markdown (`--text`, `--html`, `--latex`, `--pdf`, `--markdown`)
 - Summary line output (`-s`/`--sum`)
 - Language detection (shown in output)
 - Default behavior: running without arguments acts like `-rv .`
@@ -38,6 +39,11 @@ sourcelines [OPTIONS] FILES...
 - `-w`, `--words`             : Show word count
 - `-c`, `--chars`             : Show character count
 - `-b`, `--bytes`             : Show byte count
+- `--text`                    : Output summary in text report format
+- `--html`                    : Output summary in HTML report format
+- `--latex`                   : Output summary in LaTeX report format
+- `--pdf`                     : Output summary in PDF report format (requires LaTeX/pdflatex)
+- `--markdown`                : Output summary in Markdown report format
 - `-h`, `--help`              : Show help message
 - `-V`, `--version`           : Show version
 
@@ -62,7 +68,14 @@ For summary line (with `-s`):
 ```sh
 sourcelines -r -l -R -w src/
 sourcelines -k -K -c -b file.rs
+sourcelines --text . > report.txt
+sourcelines --markdown . > report.md
+sourcelines --html . > report.html
 ```
+
+## Report Formats
+
+The `--text`, `--html`, `--latex`, `--pdf`, and `--markdown` options generate formatted reports with summary statistics and per-language breakdowns. These options automatically enable recursive mode and summary output.
 
 ## Build
 

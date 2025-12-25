@@ -36,6 +36,25 @@ cargo_build = custom_target(
     build_by_default: true,
 )
 
+# Generate sourcelines.txt report after successful build
+# This runs the built sourcelines executable with --text to generate a report
+# Run from source directory to scan source files, not build files
+sourcelines_txt = custom_target(
+    'sourcelines-txt',
+    command: [
+        'sh', '-c',
+        'EXE="@0@"; OUT="@1@"; SRCDIR="@2@"; if [ -x "$EXE" ]; then cd "$SRCDIR" && "$EXE" --text . > "$OUT" 2>"$OUT.err" || (echo "Error: sourcelines --text failed. Check $OUT.err" >&2; touch "$OUT"); fi'.format(
+            build_root / 'sourcelines',
+            source_root / 'sourcelines.txt',
+            source_root
+        ),
+    ],
+    output: 'sourcelines.txt',
+    depends: cargo_build,
+    build_by_default: true,
+    build_always_stale: true,
+)
+
 # No direct install from the source tree target directory; installation is handled by the custom_target above.
 
 # Generate man page from README.md (enabled by default)

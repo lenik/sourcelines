@@ -1,3 +1,11 @@
+sourcelines (1.1.11) testing; urgency=medium
+
+  * Add multiple report format options: --text, --html, --latex, --pdf, --markdown
+  * Fix text report alignment: horizontal lines now properly align with table columns
+  * Improve meson build: generate sourcelines.txt from source directory
+
+ -- Lenik (谢继雷) <lenik@bodz.net>  Thu, 25 Dec 2025 15:51:12 +0800
+
 sourcelines (1.1.10) testing; urgency=medium
 
   * Add ignore list support: parse .gitignore files to exclude files from counting

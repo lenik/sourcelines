@@ -208,6 +208,21 @@ struct Cli {
     /// Do not parse ignore list files
     #[arg(short = 'I', long = "no-ignorelist")]
     no_ignorelist: bool,
+    /// Output summary in text report format
+    #[arg(long = "text")]
+    text: bool,
+    /// Output summary in HTML report format
+    #[arg(long = "html")]
+    html: bool,
+    /// Output summary in LaTeX report format
+    #[arg(long = "latex")]
+    latex: bool,
+    /// Output summary in PDF report format (requires LaTeX)
+    #[arg(long = "pdf")]
+    pdf: bool,
+    /// Output summary in Markdown report format
+    #[arg(long = "markdown")]
+    markdown: bool,
     /// Show word count
     #[arg(short = 'w', long = "words", group = "columns")]
     words: bool,
@@ -226,10 +241,15 @@ struct Cli {
 fn main() {
     let mut cli = Cli::parse();
     // If no files provided, default to -rv .
+    // If --text is used, also enable recursive and sum by default
     if cli.files.is_empty() {
         cli.files = vec![".".to_string()];
         cli.recursive = true;
         cli.verbose = true;
+    }
+    if cli.text || cli.html || cli.latex || cli.pdf || cli.markdown {
+        cli.recursive = true;
+        cli.sum = true;
     }
     let show_actual_klocs = cli.actual_klocs;
     let show_actual_loc = cli.actual_loc;
@@ -244,6 +264,11 @@ fn main() {
     let color = cli.color;
     let follow_symlinks = cli.follow_symlinks;
     let use_ignorelist = cli.ignorelist && !cli.no_ignorelist;
+    let text_mode = cli.text;
+    let html_mode = cli.html;
+    let latex_mode = cli.latex;
+    let pdf_mode = cli.pdf;
+    let markdown_mode = cli.markdown;
     let files = &cli.files;
 
     // Default exclude patterns
@@ -341,7 +366,7 @@ fn main() {
         }
     }
 
-    if verbose || !show_sum {
+    if (verbose || !show_sum) && !text_mode && !html_mode && !latex_mode && !pdf_mode && !markdown_mode {
         // Print all file stats
         for (stats, lang, arg, is_dir) in &file_stats {
             print_stats(
@@ -425,8 +450,18 @@ fn main() {
         }
     }
 
-    // Print output according to -s and -v
-    if show_sum {
+    // Print output according to -s and -v, or report format modes
+    if pdf_mode {
+        print_pdf_report(&sum, &per_lang_sum, show_default, show_actual_klocs, show_actual_loc, show_raw_klocs, show_raw_loc, show_words, show_chars, show_bytes);
+    } else if latex_mode {
+        print_latex_report(&sum, &per_lang_sum, show_default, show_actual_klocs, show_actual_loc, show_raw_klocs, show_raw_loc, show_words, show_chars, show_bytes);
+    } else if html_mode {
+        print_html_report(&sum, &per_lang_sum, show_default, show_actual_klocs, show_actual_loc, show_raw_klocs, show_raw_loc, show_words, show_chars, show_bytes);
+    } else if markdown_mode {
+        print_markdown_report(&sum, &per_lang_sum, show_default, show_actual_klocs, show_actual_loc, show_raw_klocs, show_raw_loc, show_words, show_chars, show_bytes);
+    } else if text_mode {
+        print_text_report(&sum, &per_lang_sum, show_default, show_actual_klocs, show_actual_loc, show_raw_klocs, show_raw_loc, show_words, show_chars, show_bytes);
+    } else if show_sum {
         // Always print global sum at end
         print_stats(
             &sum,
@@ -633,6 +668,823 @@ fn print_stats(
     println!("{}", out.trim_end());
     if filename.is_none() {
         print!("{}", reset);
+    }
+}
+
+fn print_text_report(
+    sum: &Stats,
+    per_lang_sum: &std::collections::HashMap<String, Stats>,
+    show_default: bool,
+    show_actual_klocs: bool,
+    show_actual_loc: bool,
+    show_raw_klocs: bool,
+    show_raw_loc: bool,
+    show_words: bool,
+    show_chars: bool,
+    show_bytes: bool,
+) {
+    println!("Source Code Statistics Report");
+    println!("{}", "=".repeat(80));
+    println!();
+    
+    // Summary section
+    println!("Summary:");
+    println!("{}", "-".repeat(80));
+    if show_actual_klocs || (show_default && show_actual_loc) {
+        if show_actual_klocs {
+            println!("  Actual Lines of Code (KLOC): {:>12.3}", sum.actual_loc as f64 / 1000.0);
+        } else {
+            println!("  Actual Lines of Code:        {:>12}", sum.actual_loc);
+        }
+    }
+    if show_raw_klocs || (show_default && show_raw_loc) {
+        if show_raw_klocs {
+            println!("  Raw Lines of Code (KLOC):    {:>12.3}", sum.raw_loc as f64 / 1000.0);
+        } else {
+            println!("  Raw Lines of Code:           {:>12}", sum.raw_loc);
+        }
+    }
+    if show_words || show_default {
+        println!("  Words:                       {:>12}", sum.words);
+    }
+    if show_chars || show_default {
+        println!("  Characters:                  {:>12}", sum.chars);
+    }
+    if show_bytes || show_default {
+        println!("  Bytes:                       {:>12}", sum.bytes);
+    }
+    println!();
+    
+    // Per-language breakdown
+    if !per_lang_sum.is_empty() {
+        println!("Per-Language Breakdown:");
+        println!("{}", "-".repeat(80));
+        
+        // Sort by actual_loc descending
+        let mut lang_items: Vec<(&String, &Stats)> = per_lang_sum.iter().collect();
+        lang_items.sort_by(|(_, sa), (_, sb)| sb.actual_loc.cmp(&sa.actual_loc));
+        
+        // Calculate table width
+        let mut table_width = 20; // Language column
+        let num_cols = (if show_actual_klocs || (show_default && show_actual_loc) { 1 } else { 0 })
+            + (if show_raw_klocs || (show_default && show_raw_loc) { 1 } else { 0 })
+            + (if show_words || show_default { 1 } else { 0 })
+            + (if show_chars || show_default { 1 } else { 0 })
+            + (if show_bytes || show_default { 1 } else { 0 });
+        table_width += num_cols * 13; // 12 chars + 1 space for each column
+        table_width += 2; // Leading spaces
+        
+        // Print header
+        print!("  {:<20}", "Language");
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                print!(" {:>12}", "Actual KLOC");
+            } else {
+                print!(" {:>12}", "Actual LOC");
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                print!(" {:>12}", "Raw KLOC");
+            } else {
+                print!(" {:>12}", "Raw LOC");
+            }
+        }
+        if show_words || show_default {
+            print!(" {:>12}", "Words");
+        }
+        if show_chars || show_default {
+            print!(" {:>12}", "Chars");
+        }
+        if show_bytes || show_default {
+            print!(" {:>12}", "Bytes");
+        }
+        println!();
+        println!("  {}", "-".repeat(table_width - 2));
+        
+        // Print data
+        for (lang, stats) in lang_items {
+            // Filter out zero-count languages
+            if stats.actual_loc == 0 && stats.raw_loc == 0 && stats.words == 0 && stats.chars == 0 && stats.bytes == 0 {
+                continue;
+            }
+            
+            print!("  {:<20}", lang);
+            if show_actual_klocs || (show_default && show_actual_loc) {
+                if show_actual_klocs {
+                    print!(" {:>12.3}", stats.actual_loc as f64 / 1000.0);
+                } else {
+                    print!(" {:>12}", stats.actual_loc);
+                }
+            }
+            if show_raw_klocs || (show_default && show_raw_loc) {
+                if show_raw_klocs {
+                    print!(" {:>12.3}", stats.raw_loc as f64 / 1000.0);
+                } else {
+                    print!(" {:>12}", stats.raw_loc);
+                }
+            }
+            if show_words || show_default {
+                print!(" {:>12}", stats.words);
+            }
+            if show_chars || show_default {
+                print!(" {:>12}", stats.chars);
+            }
+            if show_bytes || show_default {
+                print!(" {:>12}", stats.bytes);
+            }
+            println!();
+        }
+        println!();
+    }
+    
+    println!("{}", "=".repeat(80));
+}
+
+fn print_html_report(
+    sum: &Stats,
+    per_lang_sum: &std::collections::HashMap<String, Stats>,
+    show_default: bool,
+    show_actual_klocs: bool,
+    show_actual_loc: bool,
+    show_raw_klocs: bool,
+    show_raw_loc: bool,
+    show_words: bool,
+    show_chars: bool,
+    show_bytes: bool,
+) {
+    println!("<!DOCTYPE html>");
+    println!("<html lang=\"en\">");
+    println!("<head>");
+    println!("  <meta charset=\"UTF-8\">");
+    println!("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+    println!("  <title>Source Code Statistics Report</title>");
+    println!("  <style>");
+    println!("    body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}");
+    println!("    .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}");
+    println!("    h1 {{ color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }}");
+    println!("    h2 {{ color: #555; margin-top: 30px; }}");
+    println!("    table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}");
+    println!("    th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}");
+    println!("    th {{ background-color: #4CAF50; color: white; font-weight: bold; }}");
+    println!("    tr:hover {{ background-color: #f5f5f5; }}");
+    println!("    .summary {{ background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin: 20px 0; }}");
+    println!("    .summary-item {{ margin: 8px 0; font-size: 16px; }}");
+    println!("    .summary-label {{ font-weight: bold; color: #2e7d32; }}");
+    println!("  </style>");
+    println!("</head>");
+    println!("<body>");
+    println!("  <div class=\"container\">");
+    println!("    <h1>Source Code Statistics Report</h1>");
+    
+    // Summary section
+    println!("    <h2>Summary</h2>");
+    println!("    <div class=\"summary\">");
+    if show_actual_klocs || (show_default && show_actual_loc) {
+        if show_actual_klocs {
+            println!("      <div class=\"summary-item\"><span class=\"summary-label\">Actual Lines of Code (KLOC):</span> {:.3}</div>", sum.actual_loc as f64 / 1000.0);
+        } else {
+            println!("      <div class=\"summary-item\"><span class=\"summary-label\">Actual Lines of Code:</span> {}</div>", sum.actual_loc);
+        }
+    }
+    if show_raw_klocs || (show_default && show_raw_loc) {
+        if show_raw_klocs {
+            println!("      <div class=\"summary-item\"><span class=\"summary-label\">Raw Lines of Code (KLOC):</span> {:.3}</div>", sum.raw_loc as f64 / 1000.0);
+        } else {
+            println!("      <div class=\"summary-item\"><span class=\"summary-label\">Raw Lines of Code:</span> {}</div>", sum.raw_loc);
+        }
+    }
+    if show_words || show_default {
+        println!("      <div class=\"summary-item\"><span class=\"summary-label\">Words:</span> {}</div>", sum.words);
+    }
+    if show_chars || show_default {
+        println!("      <div class=\"summary-item\"><span class=\"summary-label\">Characters:</span> {}</div>", sum.chars);
+    }
+    if show_bytes || show_default {
+        println!("      <div class=\"summary-item\"><span class=\"summary-label\">Bytes:</span> {}</div>", sum.bytes);
+    }
+    println!("    </div>");
+    
+    // Per-language breakdown
+    if !per_lang_sum.is_empty() {
+        println!("    <h2>Per-Language Breakdown</h2>");
+        println!("    <table>");
+        println!("      <thead>");
+        print!("        <tr><th>Language</th>");
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                print!("<th>Actual KLOC</th>");
+            } else {
+                print!("<th>Actual LOC</th>");
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                print!("<th>Raw KLOC</th>");
+            } else {
+                print!("<th>Raw LOC</th>");
+            }
+        }
+        if show_words || show_default {
+            print!("<th>Words</th>");
+        }
+        if show_chars || show_default {
+            print!("<th>Chars</th>");
+        }
+        if show_bytes || show_default {
+            print!("<th>Bytes</th>");
+        }
+        println!("</tr>");
+        println!("      </thead>");
+        println!("      <tbody>");
+        
+        // Sort by actual_loc descending
+        let mut lang_items: Vec<(&String, &Stats)> = per_lang_sum.iter().collect();
+        lang_items.sort_by(|(_, sa), (_, sb)| sb.actual_loc.cmp(&sa.actual_loc));
+        
+        for (lang, stats) in lang_items {
+            // Filter out zero-count languages
+            if stats.actual_loc == 0 && stats.raw_loc == 0 && stats.words == 0 && stats.chars == 0 && stats.bytes == 0 {
+                continue;
+            }
+            
+            print!("        <tr><td>{}</td>", lang);
+            if show_actual_klocs || (show_default && show_actual_loc) {
+                if show_actual_klocs {
+                    print!("<td>{:.3}</td>", stats.actual_loc as f64 / 1000.0);
+                } else {
+                    print!("<td>{}</td>", stats.actual_loc);
+                }
+            }
+            if show_raw_klocs || (show_default && show_raw_loc) {
+                if show_raw_klocs {
+                    print!("<td>{:.3}</td>", stats.raw_loc as f64 / 1000.0);
+                } else {
+                    print!("<td>{}</td>", stats.raw_loc);
+                }
+            }
+            if show_words || show_default {
+                print!("<td>{}</td>", stats.words);
+            }
+            if show_chars || show_default {
+                print!("<td>{}</td>", stats.chars);
+            }
+            if show_bytes || show_default {
+                print!("<td>{}</td>", stats.bytes);
+            }
+            println!("</tr>");
+        }
+        
+        println!("      </tbody>");
+        println!("    </table>");
+    }
+    
+    println!("  </div>");
+    println!("</body>");
+    println!("</html>");
+}
+
+fn print_latex_report(
+    sum: &Stats,
+    per_lang_sum: &std::collections::HashMap<String, Stats>,
+    show_default: bool,
+    show_actual_klocs: bool,
+    show_actual_loc: bool,
+    show_raw_klocs: bool,
+    show_raw_loc: bool,
+    show_words: bool,
+    show_chars: bool,
+    show_bytes: bool,
+) {
+    println!("\\documentclass{{article}}");
+    println!("\\usepackage[utf8]{{inputenc}}");
+    println!("\\usepackage{{booktabs}}");
+    println!("\\usepackage{{longtable}}");
+    println!("\\usepackage{{geometry}}");
+    println!("\\geometry{{a4paper, margin=1in}}");
+    println!("\\title{{Source Code Statistics Report}}");
+    println!("\\author{{sourcelines}}");
+    println!("\\date{{\\today}}");
+    println!("\\begin{{document}}");
+    println!("\\maketitle");
+    println!();
+    println!("\\section{{Summary}}");
+    println!("\\begin{{itemize}}");
+    
+    if show_actual_klocs || (show_default && show_actual_loc) {
+        if show_actual_klocs {
+            println!("  \\item \\textbf{{Actual Lines of Code (KLOC):}} {:.3}", sum.actual_loc as f64 / 1000.0);
+        } else {
+            println!("  \\item \\textbf{{Actual Lines of Code:}} {}", sum.actual_loc);
+        }
+    }
+    if show_raw_klocs || (show_default && show_raw_loc) {
+        if show_raw_klocs {
+            println!("  \\item \\textbf{{Raw Lines of Code (KLOC):}} {:.3}", sum.raw_loc as f64 / 1000.0);
+        } else {
+            println!("  \\item \\textbf{{Raw Lines of Code:}} {}", sum.raw_loc);
+        }
+    }
+    if show_words || show_default {
+        println!("  \\item \\textbf{{Words:}} {}", sum.words);
+    }
+    if show_chars || show_default {
+        println!("  \\item \\textbf{{Characters:}} {}", sum.chars);
+    }
+    if show_bytes || show_default {
+        println!("  \\item \\textbf{{Bytes:}} {}", sum.bytes);
+    }
+    println!("\\end{{itemize}}");
+    println!();
+    
+    // Per-language breakdown
+    if !per_lang_sum.is_empty() {
+        println!("\\section{{Per-Language Breakdown}}");
+        println!("\\begin{{longtable}}{{l");
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            print!("r");
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            print!("r");
+        }
+        if show_words || show_default {
+            print!("r");
+        }
+        if show_chars || show_default {
+            print!("r");
+        }
+        if show_bytes || show_default {
+            print!("r");
+        }
+        println!("}}");
+        println!("\\toprule");
+        print!("  \\textbf{{Language}}");
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                print!(" & \\textbf{{Actual KLOC}}");
+            } else {
+                print!(" & \\textbf{{Actual LOC}}");
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                print!(" & \\textbf{{Raw KLOC}}");
+            } else {
+                print!(" & \\textbf{{Raw LOC}}");
+            }
+        }
+        if show_words || show_default {
+            print!(" & \\textbf{{Words}}");
+        }
+        if show_chars || show_default {
+            print!(" & \\textbf{{Chars}}");
+        }
+        if show_bytes || show_default {
+            print!(" & \\textbf{{Bytes}}");
+        }
+        println!(" \\\\");
+        println!("\\midrule");
+        println!("\\endfirsthead");
+        println!("\\multicolumn{{{}}}{{c}}{{\\textit{{Continued from previous page}}}} \\\\", 
+                 1 + (if show_actual_klocs || (show_default && show_actual_loc) { 1 } else { 0 })
+                 + (if show_raw_klocs || (show_default && show_raw_loc) { 1 } else { 0 })
+                 + (if show_words || show_default { 1 } else { 0 })
+                 + (if show_chars || show_default { 1 } else { 0 })
+                 + (if show_bytes || show_default { 1 } else { 0 }));
+        println!("\\toprule");
+        print!("  \\textbf{{Language}}");
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                print!(" & \\textbf{{Actual KLOC}}");
+            } else {
+                print!(" & \\textbf{{Actual LOC}}");
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                print!(" & \\textbf{{Raw KLOC}}");
+            } else {
+                print!(" & \\textbf{{Raw LOC}}");
+            }
+        }
+        if show_words || show_default {
+            print!(" & \\textbf{{Words}}");
+        }
+        if show_chars || show_default {
+            print!(" & \\textbf{{Chars}}");
+        }
+        if show_bytes || show_default {
+            print!(" & \\textbf{{Bytes}}");
+        }
+        println!(" \\\\");
+        println!("\\midrule");
+        println!("\\endhead");
+        println!("\\bottomrule");
+        println!("\\endfoot");
+        println!("\\bottomrule");
+        println!("\\endlastfoot");
+        
+        // Sort by actual_loc descending
+        let mut lang_items: Vec<(&String, &Stats)> = per_lang_sum.iter().collect();
+        lang_items.sort_by(|(_, sa), (_, sb)| sb.actual_loc.cmp(&sa.actual_loc));
+        
+        for (lang, stats) in lang_items {
+            // Filter out zero-count languages
+            if stats.actual_loc == 0 && stats.raw_loc == 0 && stats.words == 0 && stats.chars == 0 && stats.bytes == 0 {
+                continue;
+            }
+            
+            // Escape LaTeX special characters in language name
+            let lang_escaped = lang.replace('&', "\\&").replace('%', "\\%").replace('$', "\\$").replace('#', "\\#").replace('^', "\\textasciicircum{}").replace('_', "\\_").replace('{', "\\{").replace('}', "\\}");
+            
+            print!("  {}", lang_escaped);
+            if show_actual_klocs || (show_default && show_actual_loc) {
+                if show_actual_klocs {
+                    print!(" & {:.3}", stats.actual_loc as f64 / 1000.0);
+                } else {
+                    print!(" & {}", stats.actual_loc);
+                }
+            }
+            if show_raw_klocs || (show_default && show_raw_loc) {
+                if show_raw_klocs {
+                    print!(" & {:.3}", stats.raw_loc as f64 / 1000.0);
+                } else {
+                    print!(" & {}", stats.raw_loc);
+                }
+            }
+            if show_words || show_default {
+                print!(" & {}", stats.words);
+            }
+            if show_chars || show_default {
+                print!(" & {}", stats.chars);
+            }
+            if show_bytes || show_default {
+                print!(" & {}", stats.bytes);
+            }
+            println!(" \\\\");
+        }
+        
+        println!("\\end{{longtable}}");
+    }
+    
+    println!("\\end{{document}}");
+}
+
+fn print_markdown_report(
+    sum: &Stats,
+    per_lang_sum: &std::collections::HashMap<String, Stats>,
+    show_default: bool,
+    show_actual_klocs: bool,
+    show_actual_loc: bool,
+    show_raw_klocs: bool,
+    show_raw_loc: bool,
+    show_words: bool,
+    show_chars: bool,
+    show_bytes: bool,
+) {
+    println!("# Source Code Statistics Report");
+    println!();
+    
+    // Summary section
+    println!("## Summary");
+    println!();
+    if show_actual_klocs || (show_default && show_actual_loc) {
+        if show_actual_klocs {
+            println!("- **Actual Lines of Code (KLOC):** {:.3}", sum.actual_loc as f64 / 1000.0);
+        } else {
+            println!("- **Actual Lines of Code:** {}", sum.actual_loc);
+        }
+    }
+    if show_raw_klocs || (show_default && show_raw_loc) {
+        if show_raw_klocs {
+            println!("- **Raw Lines of Code (KLOC):** {:.3}", sum.raw_loc as f64 / 1000.0);
+        } else {
+            println!("- **Raw Lines of Code:** {}", sum.raw_loc);
+        }
+    }
+    if show_words || show_default {
+        println!("- **Words:** {}", sum.words);
+    }
+    if show_chars || show_default {
+        println!("- **Characters:** {}", sum.chars);
+    }
+    if show_bytes || show_default {
+        println!("- **Bytes:** {}", sum.bytes);
+    }
+    println!();
+    
+    // Per-language breakdown
+    if !per_lang_sum.is_empty() {
+        println!("## Per-Language Breakdown");
+        println!();
+        
+        // Sort by actual_loc descending
+        let mut lang_items: Vec<(&String, &Stats)> = per_lang_sum.iter().collect();
+        lang_items.sort_by(|(_, sa), (_, sb)| sb.actual_loc.cmp(&sa.actual_loc));
+        
+        // Print table header
+        print!("| Language");
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                print!(" | Actual KLOC");
+            } else {
+                print!(" | Actual LOC");
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                print!(" | Raw KLOC");
+            } else {
+                print!(" | Raw LOC");
+            }
+        }
+        if show_words || show_default {
+            print!(" | Words");
+        }
+        if show_chars || show_default {
+            print!(" | Chars");
+        }
+        if show_bytes || show_default {
+            print!(" | Bytes");
+        }
+        println!(" |");
+        
+        // Print separator
+        print!("|");
+        let num_cols = 1 + (if show_actual_klocs || (show_default && show_actual_loc) { 1 } else { 0 })
+            + (if show_raw_klocs || (show_default && show_raw_loc) { 1 } else { 0 })
+            + (if show_words || show_default { 1 } else { 0 })
+            + (if show_chars || show_default { 1 } else { 0 })
+            + (if show_bytes || show_default { 1 } else { 0 });
+        for _ in 0..num_cols {
+            print!(" --- |");
+        }
+        println!();
+        
+        // Print data rows
+        for (lang, stats) in lang_items {
+            // Filter out zero-count languages
+            if stats.actual_loc == 0 && stats.raw_loc == 0 && stats.words == 0 && stats.chars == 0 && stats.bytes == 0 {
+                continue;
+            }
+            
+            print!("| {}", lang);
+            if show_actual_klocs || (show_default && show_actual_loc) {
+                if show_actual_klocs {
+                    print!(" | {:.3}", stats.actual_loc as f64 / 1000.0);
+                } else {
+                    print!(" | {}", stats.actual_loc);
+                }
+            }
+            if show_raw_klocs || (show_default && show_raw_loc) {
+                if show_raw_klocs {
+                    print!(" | {:.3}", stats.raw_loc as f64 / 1000.0);
+                } else {
+                    print!(" | {}", stats.raw_loc);
+                }
+            }
+            if show_words || show_default {
+                print!(" | {}", stats.words);
+            }
+            if show_chars || show_default {
+                print!(" | {}", stats.chars);
+            }
+            if show_bytes || show_default {
+                print!(" | {}", stats.bytes);
+            }
+            println!(" |");
+        }
+        println!();
+    }
+}
+
+fn print_pdf_report(
+    sum: &Stats,
+    per_lang_sum: &std::collections::HashMap<String, Stats>,
+    show_default: bool,
+    show_actual_klocs: bool,
+    show_actual_loc: bool,
+    show_raw_klocs: bool,
+    show_raw_loc: bool,
+    show_words: bool,
+    show_chars: bool,
+    show_bytes: bool,
+) {
+    use std::io::Write;
+    use std::process::Command;
+    
+    // Generate LaTeX content
+    let mut latex_content = Vec::new();
+    let mut latex_writer = std::io::Cursor::new(&mut latex_content);
+    
+    writeln!(latex_writer, "\\documentclass{{article}}").unwrap();
+    writeln!(latex_writer, "\\usepackage[utf8]{{inputenc}}").unwrap();
+    writeln!(latex_writer, "\\usepackage{{booktabs}}").unwrap();
+    writeln!(latex_writer, "\\usepackage{{longtable}}").unwrap();
+    writeln!(latex_writer, "\\usepackage{{geometry}}").unwrap();
+    writeln!(latex_writer, "\\geometry{{a4paper, margin=1in}}").unwrap();
+    writeln!(latex_writer, "\\title{{Source Code Statistics Report}}").unwrap();
+    writeln!(latex_writer, "\\author{{sourcelines}}").unwrap();
+    writeln!(latex_writer, "\\date{{\\today}}").unwrap();
+    writeln!(latex_writer, "\\begin{{document}}").unwrap();
+    writeln!(latex_writer, "\\maketitle").unwrap();
+    writeln!(latex_writer).unwrap();
+    writeln!(latex_writer, "\\section{{Summary}}").unwrap();
+    writeln!(latex_writer, "\\begin{{itemize}}").unwrap();
+    
+    if show_actual_klocs || (show_default && show_actual_loc) {
+        if show_actual_klocs {
+            writeln!(latex_writer, "  \\item \\textbf{{Actual Lines of Code (KLOC):}} {:.3}", sum.actual_loc as f64 / 1000.0).unwrap();
+        } else {
+            writeln!(latex_writer, "  \\item \\textbf{{Actual Lines of Code:}} {}", sum.actual_loc).unwrap();
+        }
+    }
+    if show_raw_klocs || (show_default && show_raw_loc) {
+        if show_raw_klocs {
+            writeln!(latex_writer, "  \\item \\textbf{{Raw Lines of Code (KLOC):}} {:.3}", sum.raw_loc as f64 / 1000.0).unwrap();
+        } else {
+            writeln!(latex_writer, "  \\item \\textbf{{Raw Lines of Code:}} {}", sum.raw_loc).unwrap();
+        }
+    }
+    if show_words || show_default {
+        writeln!(latex_writer, "  \\item \\textbf{{Words:}} {}", sum.words).unwrap();
+    }
+    if show_chars || show_default {
+        writeln!(latex_writer, "  \\item \\textbf{{Characters:}} {}", sum.chars).unwrap();
+    }
+    if show_bytes || show_default {
+        writeln!(latex_writer, "  \\item \\textbf{{Bytes:}} {}", sum.bytes).unwrap();
+    }
+    writeln!(latex_writer, "\\end{{itemize}}").unwrap();
+    writeln!(latex_writer).unwrap();
+    
+    // Per-language breakdown
+    if !per_lang_sum.is_empty() {
+        writeln!(latex_writer, "\\section{{Per-Language Breakdown}}").unwrap();
+        let col_spec = format!("l{}{}{}{}{}",
+            if show_actual_klocs || (show_default && show_actual_loc) { "r" } else { "" },
+            if show_raw_klocs || (show_default && show_raw_loc) { "r" } else { "" },
+            if show_words || show_default { "r" } else { "" },
+            if show_chars || show_default { "r" } else { "" },
+            if show_bytes || show_default { "r" } else { "" });
+        writeln!(latex_writer, "\\begin{{longtable}}{{{}}}", col_spec).unwrap();
+        writeln!(latex_writer, "\\toprule").unwrap();
+        write!(latex_writer, "  \\textbf{{Language}}").unwrap();
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                write!(latex_writer, " & \\textbf{{Actual KLOC}}").unwrap();
+            } else {
+                write!(latex_writer, " & \\textbf{{Actual LOC}}").unwrap();
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                write!(latex_writer, " & \\textbf{{Raw KLOC}}").unwrap();
+            } else {
+                write!(latex_writer, " & \\textbf{{Raw LOC}}").unwrap();
+            }
+        }
+        if show_words || show_default {
+            write!(latex_writer, " & \\textbf{{Words}}").unwrap();
+        }
+        if show_chars || show_default {
+            write!(latex_writer, " & \\textbf{{Chars}}").unwrap();
+        }
+        if show_bytes || show_default {
+            write!(latex_writer, " & \\textbf{{Bytes}}").unwrap();
+        }
+        writeln!(latex_writer, " \\\\").unwrap();
+        writeln!(latex_writer, "\\midrule").unwrap();
+        writeln!(latex_writer, "\\endfirsthead").unwrap();
+        writeln!(latex_writer, "\\multicolumn{{{}}}{{c}}{{\\textit{{Continued from previous page}}}} \\\\", 
+                 1 + (if show_actual_klocs || (show_default && show_actual_loc) { 1 } else { 0 })
+                 + (if show_raw_klocs || (show_default && show_raw_loc) { 1 } else { 0 })
+                 + (if show_words || show_default { 1 } else { 0 })
+                 + (if show_chars || show_default { 1 } else { 0 })
+                 + (if show_bytes || show_default { 1 } else { 0 })).unwrap();
+        writeln!(latex_writer, "\\toprule").unwrap();
+        write!(latex_writer, "  \\textbf{{Language}}").unwrap();
+        if show_actual_klocs || (show_default && show_actual_loc) {
+            if show_actual_klocs {
+                write!(latex_writer, " & \\textbf{{Actual KLOC}}").unwrap();
+            } else {
+                write!(latex_writer, " & \\textbf{{Actual LOC}}").unwrap();
+            }
+        }
+        if show_raw_klocs || (show_default && show_raw_loc) {
+            if show_raw_klocs {
+                write!(latex_writer, " & \\textbf{{Raw KLOC}}").unwrap();
+            } else {
+                write!(latex_writer, " & \\textbf{{Raw LOC}}").unwrap();
+            }
+        }
+        if show_words || show_default {
+            write!(latex_writer, " & \\textbf{{Words}}").unwrap();
+        }
+        if show_chars || show_default {
+            write!(latex_writer, " & \\textbf{{Chars}}").unwrap();
+        }
+        if show_bytes || show_default {
+            write!(latex_writer, " & \\textbf{{Bytes}}").unwrap();
+        }
+        writeln!(latex_writer, " \\\\").unwrap();
+        writeln!(latex_writer, "\\midrule").unwrap();
+        writeln!(latex_writer, "\\endhead").unwrap();
+        writeln!(latex_writer, "\\bottomrule").unwrap();
+        writeln!(latex_writer, "\\endfoot").unwrap();
+        writeln!(latex_writer, "\\bottomrule").unwrap();
+        writeln!(latex_writer, "\\endlastfoot").unwrap();
+        
+        // Sort by actual_loc descending
+        let mut lang_items: Vec<(&String, &Stats)> = per_lang_sum.iter().collect();
+        lang_items.sort_by(|(_, sa), (_, sb)| sb.actual_loc.cmp(&sa.actual_loc));
+        
+        for (lang, stats) in lang_items {
+            // Filter out zero-count languages
+            if stats.actual_loc == 0 && stats.raw_loc == 0 && stats.words == 0 && stats.chars == 0 && stats.bytes == 0 {
+                continue;
+            }
+            
+            // Escape LaTeX special characters
+            let lang_escaped = lang.replace('&', "\\&").replace('%', "\\%").replace('$', "\\$").replace('#', "\\#").replace('^', "\\textasciicircum{}").replace('_', "\\_").replace('{', "\\{").replace('}', "\\}");
+            
+            write!(latex_writer, "  {}", lang_escaped).unwrap();
+            if show_actual_klocs || (show_default && show_actual_loc) {
+                if show_actual_klocs {
+                    write!(latex_writer, " & {:.3}", stats.actual_loc as f64 / 1000.0).unwrap();
+                } else {
+                    write!(latex_writer, " & {}", stats.actual_loc).unwrap();
+                }
+            }
+            if show_raw_klocs || (show_default && show_raw_loc) {
+                if show_raw_klocs {
+                    write!(latex_writer, " & {:.3}", stats.raw_loc as f64 / 1000.0).unwrap();
+                } else {
+                    write!(latex_writer, " & {}", stats.raw_loc).unwrap();
+                }
+            }
+            if show_words || show_default {
+                write!(latex_writer, " & {}", stats.words).unwrap();
+            }
+            if show_chars || show_default {
+                write!(latex_writer, " & {}", stats.chars).unwrap();
+            }
+            if show_bytes || show_default {
+                write!(latex_writer, " & {}", stats.bytes).unwrap();
+            }
+            writeln!(latex_writer, " \\\\").unwrap();
+        }
+        
+        writeln!(latex_writer, "\\end{{longtable}}").unwrap();
+    }
+    
+    writeln!(latex_writer, "\\end{{document}}").unwrap();
+    
+    // Write LaTeX to temporary file
+    let temp_dir = std::env::temp_dir();
+    let temp_tex = temp_dir.join("sourcelines_report.tex");
+    fs::write(&temp_tex, &latex_content).unwrap_or_else(|_| {
+        eprintln!("Error: Could not write temporary LaTeX file");
+        std::process::exit(1);
+    });
+    
+    // Compile LaTeX to PDF using pdflatex
+    let output = Command::new("pdflatex")
+        .arg("-interaction=nonstopmode")
+        .arg("-output-directory")
+        .arg(&temp_dir)
+        .arg(&temp_tex)
+        .output();
+    
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                // Read the generated PDF and output it
+                let pdf_path = temp_dir.join("sourcelines_report.pdf");
+                if let Ok(pdf_data) = fs::read(&pdf_path) {
+                    use std::io::{self, Write};
+                    let stdout = io::stdout();
+                    let mut handle = stdout.lock();
+                    handle.write_all(&pdf_data).unwrap_or_else(|_| {
+                        eprintln!("Error: Could not write PDF to stdout");
+                        std::process::exit(1);
+                    });
+                } else {
+                    eprintln!("Error: PDF file was not generated");
+                    std::process::exit(1);
+                }
+            } else {
+                eprintln!("Error: pdflatex failed");
+                if !result.stderr.is_empty() {
+                    eprintln!("{}", String::from_utf8_lossy(&result.stderr));
+                }
+                std::process::exit(1);
+            }
+        }
+        Err(_) => {
+            eprintln!("Error: pdflatex not found. Please install a LaTeX distribution (e.g., texlive)");
+            std::process::exit(1);
+        }
     }
 }
 
