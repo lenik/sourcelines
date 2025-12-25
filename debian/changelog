@@ -1,0 +1,14 @@
+sourcelines (1.1.8) testing; urgency=medium
+
+  * Changed -L option to -R for raw-locs, added -L/--follow-symlinks option
+  * Default behavior: running without arguments acts like -rv .
+  * Filter zero-count lines from summary report
+  * By default, do not recurse into symlink directories
+
+ -- Lenik (谢继雷) <lenik@bodz.net>  Thu, 25 Dec 2025 15:22:51 +0800
+
+sourcelines (1.1.7) testing; urgency=medium
+
+  * Initial release
+
+ -- Lenik (谢继雷) <lenik@bodz.net>  Sat, 16 Aug 2025 19:03:23 +0800

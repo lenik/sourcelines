@@ -7,8 +7,10 @@
 - Supports many languages (comment syntax auto-detected by extension, shebang, or content)
 - Flexible output columns: select any combination of stats
 - Recursive directory traversal (`-r`/`--recursive`)
+- Symlink handling (`-L`/`--follow-symlinks` to follow symlinks, skipped by default)
 - Summary line output (`-s`/`--sum`)
 - Language detection (shown in output)
+- Default behavior: running without arguments acts like `-rv .`
 
 ## Usage
 
@@ -20,6 +22,7 @@ sourcelines [OPTIONS] FILES...
 ### Options
 
 - `-r`, `--recursive`         : Recursively process directories
+- `-L`, `--follow-symlinks`    : Follow symlinks when recursively processing directories
 - `-s`, `--sum`               : Output a summary line at the end
 - `-v`, `--verbose`           : Verbose output: with -s, print all file stats; for directories, print per-language summary
 - `--exclude WILDCARD`        : Exclude files/directories matching these wildcard patterns (can be used multiple times)
@@ -27,7 +30,7 @@ sourcelines [OPTIONS] FILES...
 - `-k`, `--actual-klocs`      : Show actual KLOCs (actual lines/1000)
 - `-l`, `--actual-loc`        : Show actual LOC (default if no -k)
 - `-K`, `--raw-klocs`         : Show raw KLOCs (raw lines/1000)
-- `-L`, `--raw-locs`          : Show raw LOC (default if no -K)
+- `-R`, `--raw-locs`          : Show raw LOC (default if no -K)
 - `-w`, `--words`             : Show word count
 - `-c`, `--chars`             : Show character count
 - `-b`, `--bytes`             : Show byte count
@@ -36,7 +39,7 @@ sourcelines [OPTIONS] FILES...
 
 By default, the following are excluded: `.git`, `.svn`, `node_modules`, `target`, `build`, `builddir`, `~*`, `$*`, `*.tmp`, `*.lock`. Use `--include` to re-include any of these, or `--exclude` to add more patterns. Patterns use shell-style wildcards (globs).
 
-If neither `-k` nor `-l` is given, only one is shown (default: LOC). Same for `-K`/`-L`.
+If neither `-k` nor `-l` is given, only one is shown (default: LOC). Same for `-K`/`-R`.
 
 ### Output Format
 
@@ -51,7 +54,7 @@ For summary line (with `-s`):
 ## Example
 
 ```sh
-sourcelines -r -l -L -w src/
+sourcelines -r -l -R -w src/
 sourcelines -k -K -c -b file.rs
 ```
 

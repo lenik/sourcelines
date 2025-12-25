@@ -59,8 +59,11 @@ struct Cli {
     #[arg(short = 'K', long = "raw-klocs", group = "columns")]
     raw_klocs: bool,
     /// Show raw loc
-    #[arg(short = 'L', long = "raw-locs", group = "columns")]
+    #[arg(short = 'R', long = "raw-locs", group = "columns")]
     raw_loc: bool,
+    /// Follow symlinks when recursively processing directories
+    #[arg(short = 'L', long = "follow-symlinks")]
+    follow_symlinks: bool,
     /// Show word count
     #[arg(short = 'w', long = "words", group = "columns")]
     words: bool,
@@ -72,12 +75,18 @@ struct Cli {
     bytes: bool,
 
     /// Files or directories to process
-    #[arg(required = true)]
+    #[arg(required = false)]
     files: Vec<String>,
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    // If no files provided, default to -rv .
+    if cli.files.is_empty() {
+        cli.files = vec![".".to_string()];
+        cli.recursive = true;
+        cli.verbose = true;
+    }
     let show_actual_klocs = cli.actual_klocs;
     let show_actual_loc = cli.actual_loc;
     let show_raw_klocs = cli.raw_klocs;
@@ -89,6 +98,7 @@ fn main() {
     let show_sum = cli.sum;
     let verbose = cli.verbose;
     let color = cli.color;
+    let follow_symlinks = cli.follow_symlinks;
     let files = &cli.files;
 
     // Default exclude patterns
@@ -163,7 +173,7 @@ fn main() {
         let path = Path::new(arg);
         if path.is_dir() {
             let (dir_stats, lang_map) =
-                process_dir_lang_filtered(path, recursive, &exclude_set, include_set.as_ref());
+                process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref());
             sum = add_stats(sum, dir_stats.clone());
             // Save per-language sums for verbose mode
             for (lang, stats) in lang_map.iter() {
@@ -200,7 +210,7 @@ fn main() {
                 // For directories, print per-language sum
                 let path = Path::new(arg);
                 let (_, lang_map) =
-                    process_dir_lang_filtered(path, recursive, &exclude_set, include_set.as_ref());
+                    process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref());
 
                 // Sort grouped (per-language) results by the first visible column in descending order
                 let first_col_value = |s: &Stats| -> usize {
@@ -222,6 +232,14 @@ fn main() {
                 };
 
                 let mut items: Vec<(&String, &Stats)> = lang_map.iter().collect();
+                // Filter out languages with zero counts
+                items.retain(|(_, stats)| {
+                    stats.actual_loc > 0
+                        || stats.raw_loc > 0
+                        || stats.words > 0
+                        || stats.chars > 0
+                        || stats.bytes > 0
+                });
                 items.sort_by(|(la, sa), (lb, sb)| {
                     let ka = first_col_value(sa);
                     let kb = first_col_value(sb);
@@ -271,6 +289,7 @@ fn main() {
     fn process_dir_lang_filtered(
         path: &Path,
         recursive: bool,
+        follow_symlinks: bool,
         exclude_set: &GlobSet,
         include_set: Option<&GlobSet>,
     ) -> (Stats, std::collections::HashMap<String, Stats>) {
@@ -289,9 +308,19 @@ fn main() {
             if is_excluded {
                 continue;
             }
-            if p.is_dir() && recursive {
+            // Check if it's a symlink
+            let is_symlink = fs::symlink_metadata(&p)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false);
+            
+            // Skip symlinks if follow_symlinks is false
+            if is_symlink && !follow_symlinks {
+                continue;
+            }
+            
+            if recursive && p.is_dir() {
                 let (dir_stats, dir_lang_map) =
-                    process_dir_lang_filtered(&p, true, exclude_set, include_set);
+                    process_dir_lang_filtered(&p, true, follow_symlinks, exclude_set, include_set);
                 total = add_stats(total, dir_stats.clone());
                 for (lang, stats) in dir_lang_map {
                     let entry = lang_map.entry(lang).or_default();
