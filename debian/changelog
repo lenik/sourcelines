@@ -1,3 +1,20 @@
+sourcelines (1.1.13) testing; urgency=medium
+
+  * Comment syntax support for additional file types:
+      - csharp: // and /* */
+      - dart: // and /* */
+      - docker: #
+      - json: no comments
+      - react: // and /* */
+      - markdown: <!-- -->
+      - toml: #
+      - svelte: // and /* */
+      - swift: // and /* */
+      - vue: // and /* */
+      - zig: // (no block comments)
+
+ -- Lenik (谢继雷) <lenik@bodz.net>  Fri, 10 Jul 2026 02:08:01 +0800
+
 sourcelines (1.1.12) testing; urgency=medium
 
   * Update bash completion with all report format options

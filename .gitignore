@@ -135,6 +135,7 @@ v-store
 
 /.github
 /.vscode
-
 /sourcelines
+
+*.err
 
