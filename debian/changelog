@@ -1,3 +1,15 @@
+sourcelines (1.1.14) testing; urgency=medium
+
+  * Performance: precompile gitignore globs once; stop rescanning the tree
+    under -v; reduce per-file opens and metadata syscalls
+  * CLI: countable -v/--verbose and -q/--quiet (diagnostics at -vv+)
+  * Language detection: extension-first (mjs/cjs); sample comment-syntax
+    inference instead of reading whole files
+  * Fix python integration test raw_loc expectation for trailing blank line
+  * Update README and bash completion for -q
+
+ -- Lenik (谢继雷) <lenik@bodz.net>  Wed, 25 Nov 2026 16:42:25 +0800
+
 sourcelines (1.1.13) testing; urgency=medium
 
   * Comment syntax support for additional file types:
