@@ -15,26 +15,52 @@ project(
 source_root = meson.project_source_root()
 build_root = meson.project_build_root()
 
-cargoEx = find_program('cargo-ex', required: true)
-
-cargo_build = custom_target(
-    'cargo-build',
-    command: [
-        cargoEx,
-        '-Z', 'unstable-options', '-C', source_root,
-        'build',
-        '-o', 'sourcelines',
-        '--copy-to', build_root,
-        '--release',
-        '--target-dir', build_root,
-    ],
-    output: 'sourcelines',
-    depend_files: files('src/lib.rs', 'src/main.rs', 'Cargo.toml'),
-    install: true,
-    install_dir: get_option('bindir'),
-    install_tag: 'runtime',
-    build_by_default: true,
-)
+# Prefer cargo-ex when available; otherwise fall back to cargo-build.sh so
+# clean debuild environments (without cargo-ex on PATH) still work.
+cargo_ex = find_program('cargo-ex', required: false)
+if cargo_ex.found()
+    cargo_build = custom_target(
+        'cargo-build',
+        command: [
+            cargo_ex,
+            '-Z', 'unstable-options', '-C', source_root,
+            'build',
+            '-o', 'sourcelines',
+            '--copy-to', build_root,
+            '--release',
+            '--target-dir', build_root,
+        ],
+        output: 'sourcelines',
+        depend_files: files('src/lib.rs', 'src/main.rs', 'Cargo.toml'),
+        install: true,
+        install_dir: get_option('bindir'),
+        install_tag: 'runtime',
+        build_by_default: true,
+    )
+else
+    cargo_target_dir = join_paths(build_root, 'cargo-target')
+    cargo_build = custom_target(
+        'cargo-build',
+        command: [
+            source_root / 'cargo-build.sh',
+            source_root,
+            cargo_target_dir,
+            build_root,
+            'sourcelines',
+        ],
+        output: 'sourcelines',
+        depend_files: files(
+            'src/lib.rs',
+            'src/main.rs',
+            'Cargo.toml',
+            'cargo-build.sh',
+        ),
+        install: true,
+        install_dir: get_option('bindir'),
+        install_tag: 'runtime',
+        build_by_default: true,
+    )
+endif
 
 # Generate sourcelines.txt report after successful build
 # This runs the built sourcelines executable with --text to generate a report
