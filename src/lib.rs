@@ -10,74 +10,103 @@ pub struct CommentSyntax {
     pub block_end: Option<String>,
 }
 
-pub fn detect_language(path: &Path) -> String {
-    // Try shebang first
-    if let Ok(file) = File::open(path) {
-        let mut reader = io::BufReader::new(file);
-        let mut first_line = String::new();
-        if reader.read_line(&mut first_line).is_ok() && first_line.starts_with("#!") {
-            if first_line.contains("python") { return "python".to_string(); }
-            if first_line.contains("perl") { return "perl".to_string(); }
-            if first_line.contains("ruby") { return "ruby".to_string(); }
-            if first_line.contains("bash") { return "shell".to_string(); }
-            if first_line.contains("sh") { return "shell".to_string(); }
-            if first_line.contains("zsh") { return "shell".to_string(); }
-            if first_line.contains("node") { return "javascript".to_string(); }
-            if first_line.contains("php") { return "php".to_string(); }
-            if first_line.contains("lua") { return "lua".to_string(); }
-            if first_line.contains("awk") { return "awk".to_string(); }
-            if first_line.contains("tcl") { return "tcl".to_string(); }
-        }
+fn language_from_extension(ext: &str) -> Option<&'static str> {
+    Some(match ext {
+        "bas" | "cls" | "ctl" | "frm" => "vb",
+        "bat" => "batch",
+        "c" | "h" => "c",
+        "conf" | "ini" => "config",
+        "cpp" | "cxx" | "cc" | "hpp" | "hxx" => "cpp",
+        "cs" => "csharp",
+        "css" | "scss" | "less" => "css",
+        "dart" => "dart",
+        "dockerfile" | "dockerignore" => "docker",
+        "go" => "go",
+        "html" | "htm" => "html",
+        "java" => "java",
+        "js" => "javascript",
+        "json" | "jsonc" => "json",
+        "jsp" => "jsp",
+        "jsx" => "react",
+        "kt" | "kts" => "kotlin",
+        "lua" => "lua",
+        "md" | "markdown" => "markdown",
+        "m" | "mm" => "objective-c",
+        "mjs" | "cjs" => "javascript",
+        "php" => "php",
+        "pl" | "pm" => "perl",
+        "py" | "python" => "python",
+        "rb" | "ru" | "gemspec" => "ruby",
+        "rs" => "rust",
+        "scala" => "scala",
+        "sh" | "bash" | "zsh" | "env" => "shell",
+        "sql" => "sql",
+        "sty" => "tex",
+        "svelte" => "svelte",
+        "swift" => "swift",
+        "tcl" => "tcl",
+        "toml" => "toml",
+        "ts" => "typescript",
+        "tsx" => "react",
+        "txt" => "text",
+        "vala" => "vala",
+        "vue" => "vue",
+        "xml" | "xsl" | "xslt" | "xsd" | "dtd" | "xq" => "xml",
+        "yaml" | "yml" => "yaml",
+        "zig" => "zig",
+        _ => return None,
+    })
+}
+
+fn language_from_shebang(path: &Path) -> Option<&'static str> {
+    let file = File::open(path).ok()?;
+    let mut reader = io::BufReader::new(file);
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line).ok()?;
+    if !first_line.starts_with("#!") {
+        return None;
     }
-    // Fallback to extension
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        match ext {
-            "bas" | "cls" | "ctl" | "frm" => "vb",
-            "bat" => "batch",
-            "c" | "h" => "c",
-            "conf" | "ini" => "config",
-            "cpp" | "cxx" | "cc" | "hpp" | "hxx" => "cpp",
-            "cs" => "csharp",
-            "css" | "scss" | "less" => "css",
-            "dart" => "dart",
-            "dockerfile" | "dockerignore" => "docker",
-            "go" => "go",
-            "html" | "htm" => "html",
-            "java" => "java",
-            "js" => "javascript",
-            "json" | "jsonc" => "json",
-            "jsp" => "jsp",
-            "jsx" => "react",
-            "kt" | "kts" => "kotlin",
-            "lua" => "lua",
-            "md" | "markdown" => "markdown",
-            "m" | "mm" => "objective-c",
-            "php" => "php",
-            "pl" | "pm" => "perl",
-            "py" | "python" => "python",
-            "rb" | "ru" | "gemspec" => "ruby",
-            "rs" => "rust",
-            "scala" => "scala",
-            "sh" | "bash" | "zsh" | "env" => "shell",
-            "sql" => "sql",
-            "sty" => "tex",
-            "svelte" => "svelte",
-            "swift" => "swift",
-            "tcl" => "tcl",
-            "toml" => "toml",
-            "ts" => "typescript",
-            "tsx" => "react",
-            "txt" => "text",
-            "vala" => "vala",
-            "vue" => "vue",
-            "xml" | "xsl" | "xslt" | "xsd" | "dtd" | "xq" => "xml",
-            "yaml" | "yml" => "yaml",
-            "zig" => "zig",
-            _ => ext,
-        }.to_string()
+    if first_line.contains("python") {
+        Some("python")
+    } else if first_line.contains("perl") {
+        Some("perl")
+    } else if first_line.contains("ruby") {
+        Some("ruby")
+    } else if first_line.contains("bash") || first_line.contains("zsh") || first_line.contains("sh")
+    {
+        Some("shell")
+    } else if first_line.contains("node") {
+        Some("javascript")
+    } else if first_line.contains("php") {
+        Some("php")
+    } else if first_line.contains("lua") {
+        Some("lua")
+    } else if first_line.contains("awk") {
+        Some("awk")
+    } else if first_line.contains("tcl") {
+        Some("tcl")
     } else {
-        "unknown".to_string()
+        None
     }
+}
+
+pub fn detect_language(path: &Path) -> String {
+    // Prefer extension (no I/O). Only open the file for shebang when needed.
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(lang) = language_from_extension(ext) {
+            return lang.to_string();
+        }
+        // Unknown extension: try shebang, else return the extension itself
+        if let Some(lang) = language_from_shebang(path) {
+            return lang.to_string();
+        }
+        return ext.to_string();
+    }
+
+    if let Some(lang) = language_from_shebang(path) {
+        return lang.to_string();
+    }
+    "unknown".to_string()
 }
 
 pub fn detect_comment_syntax(lang: &str, path: &Path) -> CommentSyntax {
@@ -325,7 +354,9 @@ pub fn infer_comment_syntax_from_content(path: &Path) -> CommentSyntax {
     if let Ok(file) = File::open(path) {
         let reader = io::BufReader::new(file);
         let mut in_block = vec![false; candidates.len()];
-        for line in reader.lines().flatten() {
+        // Sample only the first N lines — enough to guess syntax without a full read
+        const SAMPLE_LINES: usize = 200;
+        for line in reader.lines().flatten().take(SAMPLE_LINES) {
             let l = line.trim();
             for (i, cand) in candidates.iter().enumerate() {
                 let mut is_comment = false;
