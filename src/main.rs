@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use clap::{ArgGroup, Parser};
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobMatcher, GlobSet, GlobSetBuilder};
 use sourcelines::{CommentSyntax, detect_comment_syntax, detect_language};
 
 #[derive(Default, Debug, Clone)]
@@ -16,11 +16,32 @@ struct Stats {
     bytes: usize,
 }
 
-#[derive(Debug, Clone)]
+impl Stats {
+    fn add_assign(&mut self, other: &Stats) {
+        self.actual_loc += other.actual_loc;
+        self.raw_loc += other.raw_loc;
+        self.words += other.words;
+        self.chars += other.chars;
+        self.bytes += other.bytes;
+    }
+}
+
+/// Precompiled ignore rule. Patterns are compiled once when the ignore file is
+/// loaded; matching must never re-parse/recompile globs per path.
+#[derive(Clone)]
 struct IgnorePattern {
-    pattern: String,
+    matcher: GlobMatcher,
     is_negation: bool, // Patterns starting with ! negate previous ignores
     is_dir_only: bool, // Patterns ending with / match only directories
+}
+
+impl std::fmt::Debug for IgnorePattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IgnorePattern")
+            .field("is_negation", &self.is_negation)
+            .field("is_dir_only", &self.is_dir_only)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug)]
@@ -39,36 +60,59 @@ impl DirObject {
         }
     }
 
-    fn load_ignore_file(&mut self, ignore_file_name: &str) {
+    fn load_ignore_file(&mut self, ignore_file_name: &str, loglevel: u8) {
         let ignore_path = self.path.join(ignore_file_name);
+        log_verbose(loglevel, &format!("Loading ignore file: {:?}", ignore_path));
         if let Ok(content) = fs::read_to_string(&ignore_path) {
+            log_debug(loglevel, &format!("Successfully read ignore file: {:?}", ignore_path));
+            let mut pattern_count = 0;
             for line in content.lines() {
                 let line = line.trim();
                 // Skip empty lines and comments
                 if line.is_empty() || line.starts_with('#') {
+                    log_trace(loglevel, &format!("Skipping empty/comment line: '{}'", line));
                     continue;
                 }
-                
+
                 let is_negation = line.starts_with('!');
                 let pattern_str = if is_negation { &line[1..] } else { line };
                 let pattern_str = pattern_str.trim();
                 if pattern_str.is_empty() {
+                    log_trace(loglevel, "Skipping empty pattern after negation");
                     continue;
                 }
-                
+
                 let is_dir_only = pattern_str.ends_with('/');
                 let pattern = if is_dir_only {
-                    pattern_str[..pattern_str.len() - 1].to_string()
+                    &pattern_str[..pattern_str.len() - 1]
                 } else {
-                    pattern_str.to_string()
+                    pattern_str
                 };
-                
-                self.ignore_patterns.push(IgnorePattern {
-                    pattern,
-                    is_negation,
-                    is_dir_only,
-                });
+
+                log_trace(
+                    loglevel,
+                    &format!(
+                        "Parsed pattern: '{}' (negation: {}, dir_only: {})",
+                        pattern, is_negation, is_dir_only
+                    ),
+                );
+                if let Some(matcher) = compile_ignore_glob(pattern) {
+                    self.ignore_patterns.push(IgnorePattern {
+                        matcher,
+                        is_negation,
+                        is_dir_only,
+                    });
+                    pattern_count += 1;
+                } else {
+                    log_debug(loglevel, &format!("Skipping uncompilable ignore pattern: '{}'", pattern));
+                }
             }
+            log_verbose(
+                loglevel,
+                &format!("Loaded {} patterns from {:?}", pattern_count, ignore_path),
+            );
+        } else {
+            log_debug(loglevel, &format!("No ignore file found at: {:?}", ignore_path));
         }
     }
 
@@ -78,11 +122,15 @@ impl DirObject {
             Ok(p) => p,
             Err(_) => return true, // If we can't get relative path, include it
         };
-        
-        // Convert to string for pattern matching
-        let path_str = rel_path.to_string_lossy();
-        let path_str = path_str.replace('\\', "/"); // Normalize path separators
-        
+
+        // Convert to string for pattern matching (avoid alloc when already /-separated)
+        let path_loss = rel_path.to_string_lossy();
+        let path_str: std::borrow::Cow<'_, str> = if path_loss.as_bytes().contains(&b'\\') {
+            std::borrow::Cow::Owned(path_loss.replace('\\', "/"))
+        } else {
+            path_loss
+        };
+
         // Check patterns in order (last match wins)
         let mut included = true;
         let mut matched = false;
@@ -90,67 +138,71 @@ impl DirObject {
             if pattern.is_dir_only && !is_dir {
                 continue;
             }
-            
-            if matches_pattern(&pattern.pattern, &path_str, is_dir) {
+
+            if pattern.matcher.is_match(path_str.as_ref()) {
                 matched = true;
-                if pattern.is_negation {
-                    included = true;
-                } else {
-                    included = false;
-                }
+                included = pattern.is_negation;
             }
         }
-        
+
         // If not matched in this directory, check parent
         if !matched {
             if let Some(ref parent) = self.parent {
                 return parent.include_test(file_path, is_dir);
             }
         }
-        
+
         included
     }
 }
 
-fn matches_pattern(pattern: &str, path: &str, _is_dir: bool) -> bool {
-    // Handle simple patterns
+/// Convert a gitignore-style pattern to a compiled glob matcher (once per pattern).
+fn compile_ignore_glob(pattern: &str) -> Option<GlobMatcher> {
     if pattern == "*" {
-        return true;
+        return Glob::new("**").ok().map(|g| g.compile_matcher());
     }
-    
-    // Convert gitignore pattern to glob pattern
-    let mut glob_pattern = pattern.to_string();
-    
-    // If pattern doesn't start with /, it can match anywhere
-    if !glob_pattern.starts_with('/') {
-        glob_pattern = format!("**/{}", glob_pattern);
+
+    let mut glob_pattern = if !pattern.starts_with('/') {
+        // Unanchored: can match anywhere in the relative path
+        format!("**/{}", pattern)
     } else {
-        glob_pattern = glob_pattern[1..].to_string();
-    }
-    
-    // Handle ** patterns
+        pattern[1..].to_string()
+    };
+
+    // Preserve historical normalization used by matches_pattern
     glob_pattern = glob_pattern.replace("**/", "**");
     glob_pattern = glob_pattern.replace("/**", "**");
-    
-    // Try to match using glob
-    if let Ok(glob) = Glob::new(&glob_pattern) {
-        if glob.compile_matcher().is_match(path) {
-            return true;
+
+    match Glob::new(&glob_pattern) {
+        Ok(glob) => Some(glob.compile_matcher()),
+        Err(_) => {
+            // Fallback for odd patterns: escape and treat as literal with **/
+            let escaped = glob_escape(pattern);
+            let fallback = if pattern.starts_with('/') {
+                escaped
+            } else {
+                format!("**/{}", escaped)
+            };
+            Glob::new(&fallback).ok().map(|g| g.compile_matcher())
         }
     }
-    
-    // Fallback to simple string matching for common cases
-    if pattern.contains('*') {
-        // Simple wildcard matching
-        let parts: Vec<&str> = pattern.split('*').collect();
-        if parts.len() == 2 {
-            return path.starts_with(parts[0]) && path.ends_with(parts[1]);
+}
+
+fn glob_escape(s: &str) -> String {
+    // Escape all special glob characters
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '*' | '?' | '[' | ']' | '{' | '}' | '!' | '(' | ')' | '|' | '^' | '$' | '+' | '.'
+            | '#' => {
+                out.push('[');
+                out.push(c);
+                out.push(']');
+            }
+            _ => out.push(c),
         }
-    } else if pattern == path || path.ends_with(&format!("/{}", pattern)) {
-        return true;
     }
-    
-    false
+    out
 }
 
 #[derive(Parser, Debug)]
@@ -171,9 +223,13 @@ struct Cli {
     #[arg(short = 's', long = "sum")]
     sum: bool,
 
-    /// Verbose output: with -s, print all file stats; for directories, print per-language summary
-    #[arg(short = 'v', long = "verbose")]
-    verbose: bool,
+    /// Verbose output: with -s, print all file stats; for directories, print per-language summary. Can be used multiple times for more verbosity.
+    #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+    verbose: u8,
+
+    /// Quiet output: decrease verbosity. Can be used multiple times.
+    #[arg(short = 'q', long = "quiet", action = clap::ArgAction::Count)]
+    quiet: u8,
 
     /// Output with ANSI coloring
     #[arg(short = 'C', long = "color")]
@@ -240,17 +296,26 @@ struct Cli {
 
 fn main() {
     let mut cli = Cli::parse();
+
     // If no files provided, default to -rv .
     // If --text is used, also enable recursive and sum by default
     if cli.files.is_empty() {
         cli.files = vec![".".to_string()];
         cli.recursive = true;
-        cli.verbose = true;
+        if cli.verbose == 0 {
+            cli.verbose = 1; // match historical `-rv .` default
+        }
     }
     if cli.text || cli.html || cli.latex || cli.pdf || cli.markdown {
         cli.recursive = true;
         cli.sum = true;
     }
+
+    // Calculate loglevel: base 1, + verbose count, - quiet count, minimum 0
+    // UI "verbose" (per-language breakdown) is enabled by any -v.
+    // Diagnostic logs need -vv / -vvv / -vvvv (loglevel 3+).
+    let loglevel = 1i32 + cli.verbose as i32 - cli.quiet as i32;
+    let loglevel = loglevel.max(0) as u8;
     let show_actual_klocs = cli.actual_klocs;
     let show_actual_loc = cli.actual_loc;
     let show_raw_klocs = cli.raw_klocs;
@@ -260,7 +325,7 @@ fn main() {
     let mut show_bytes = cli.bytes;
     let recursive = cli.recursive;
     let show_sum = cli.sum;
-    let verbose = cli.verbose;
+    let verbose = cli.verbose > 0; // per-language / file listing verbosity
     let color = cli.color;
     let follow_symlinks = cli.follow_symlinks;
     let use_ignorelist = cli.ignorelist && !cli.no_ignorelist;
@@ -270,6 +335,10 @@ fn main() {
     let pdf_mode = cli.pdf;
     let markdown_mode = cli.markdown;
     let files = &cli.files;
+
+    // Cache for compiled ignore patterns per directory (keyed by ignore file path)
+    let mut ignore_cache: std::collections::HashMap<PathBuf, Vec<IgnorePattern>> =
+        std::collections::HashMap::new();
 
     // Default exclude patterns
     let default_excludes = vec![
@@ -338,37 +407,88 @@ fn main() {
     let mut sum = Stats::default();
     let mut per_lang_sum: std::collections::HashMap<String, Stats> =
         std::collections::HashMap::new();
-    let mut file_stats: Vec<(Stats, String, String, bool)> = Vec::new(); // (stats, lang, arg, is_dir)
+    // (stats, lang, arg, is_dir, optional per-language map for directories)
+    let mut file_stats: Vec<(
+        Stats,
+        String,
+        String,
+        bool,
+        Option<std::collections::HashMap<String, Stats>>,
+    )> = Vec::new();
     for arg in files {
         let path = Path::new(arg);
+        // Detect VCS once per argument (reused for the whole walk)
+        let vcs = if use_ignorelist {
+            detect_vcs(path)
+        } else {
+            VcsType::None
+        };
+        let ignore_filename = get_ignore_filename(&vcs);
+        log_verbose(
+            loglevel,
+            &format!(
+                "Detected VCS {:?} for {:?}, using ignore file: {}",
+                vcs, path, ignore_filename
+            ),
+        );
+
         if path.is_dir() {
             let dir_obj = if use_ignorelist {
                 let mut dir_obj = DirObject::new(path.to_path_buf(), None);
-                dir_obj.load_ignore_file(".gitignore");
+                dir_obj.load_ignore_file(ignore_filename, loglevel);
+                ignore_cache.insert(path.join(ignore_filename), dir_obj.ignore_patterns.clone());
                 Some(Rc::new(dir_obj))
             } else {
                 None
             };
-            let (dir_stats, lang_map) =
-                process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref(), dir_obj.as_ref());
-            sum = add_stats(sum, dir_stats.clone());
-            // Save per-language sums for verbose mode
+            let (dir_stats, lang_map) = process_dir_lang_filtered(
+                path,
+                recursive,
+                follow_symlinks,
+                &exclude_set,
+                include_set.as_ref(),
+                dir_obj.as_ref(),
+                vcs,
+                loglevel,
+                &mut ignore_cache,
+            );
+            sum.add_assign(&dir_stats);
+            // Save per-language sums for report modes
             for (lang, stats) in lang_map.iter() {
-                let entry = per_lang_sum.entry(lang.clone()).or_default();
-                *entry = add_stats(entry.clone(), stats.clone());
+                per_lang_sum.entry(lang.clone()).or_default().add_assign(stats);
             }
-            file_stats.push((dir_stats, "*".to_string(), arg.clone(), true));
+            file_stats.push((
+                dir_stats,
+                "*".to_string(),
+                arg.clone(),
+                true,
+                Some(lang_map),
+            ));
         } else {
+            log_debug(
+                loglevel,
+                &format!(
+                    "File {:?} in VCS {:?}, using ignore file: {}",
+                    path, vcs, ignore_filename
+                ),
+            );
+
             let stats = process_file(path);
-            sum = add_stats(sum, stats.clone());
+            sum.add_assign(&stats);
             let lang = detect_language(path);
-            file_stats.push((stats, lang, arg.clone(), false));
+            file_stats.push((stats, lang, arg.clone(), false, None));
         }
     }
 
-    if (verbose || !show_sum) && !text_mode && !html_mode && !latex_mode && !pdf_mode && !markdown_mode {
-        // Print all file stats
-        for (stats, lang, arg, is_dir) in &file_stats {
+    if (verbose || !show_sum)
+        && !text_mode
+        && !html_mode
+        && !latex_mode
+        && !pdf_mode
+        && !markdown_mode
+    {
+        // Print all file stats — reuse lang_map from the first walk (no second scan)
+        for (stats, lang, arg, is_dir, lang_map_opt) in &file_stats {
             print_stats(
                 stats,
                 lang,
@@ -384,67 +504,56 @@ fn main() {
                 color,
             );
             if *is_dir && verbose {
-                // For directories, print per-language sum
-                let path = Path::new(arg);
-                let dir_obj = if use_ignorelist {
-                    let mut dir_obj = DirObject::new(path.to_path_buf(), None);
-                    dir_obj.load_ignore_file(".gitignore");
-                    Some(Rc::new(dir_obj))
-                } else {
-                    None
-                };
-                let (_, lang_map) =
-                    process_dir_lang_filtered(path, recursive, follow_symlinks, &exclude_set, include_set.as_ref(), dir_obj.as_ref());
+                if let Some(lang_map) = lang_map_opt {
+                    // Sort grouped (per-language) results by the first visible column descending
+                    let first_col_value = |s: &Stats| -> usize {
+                        if show_actual_klocs {
+                            s.actual_loc
+                        } else if show_actual_loc {
+                            s.actual_loc
+                        } else if show_raw_klocs {
+                            s.raw_loc
+                        } else if show_raw_loc {
+                            s.raw_loc
+                        } else if show_words {
+                            s.words
+                        } else if show_chars {
+                            s.chars
+                        } else {
+                            s.bytes
+                        }
+                    };
 
-                // Sort grouped (per-language) results by the first visible column in descending order
-                let first_col_value = |s: &Stats| -> usize {
-                    if show_actual_klocs {
-                        s.actual_loc
-                    } else if show_actual_loc {
-                        s.actual_loc
-                    } else if show_raw_klocs {
-                        s.raw_loc
-                    } else if show_raw_loc {
-                        s.raw_loc
-                    } else if show_words {
-                        s.words
-                    } else if show_chars {
-                        s.chars
-                    } else {
-                        s.bytes
+                    let mut items: Vec<(&String, &Stats)> = lang_map.iter().collect();
+                    items.retain(|(_, stats)| {
+                        stats.actual_loc > 0
+                            || stats.raw_loc > 0
+                            || stats.words > 0
+                            || stats.chars > 0
+                            || stats.bytes > 0
+                    });
+                    items.sort_by(|(la, sa), (lb, sb)| {
+                        let ka = first_col_value(sa);
+                        let kb = first_col_value(sb);
+                        kb.cmp(&ka).then_with(|| la.cmp(lb))
+                    });
+
+                    for (lang, stats) in items.into_iter() {
+                        print_stats(
+                            stats,
+                            lang,
+                            None,
+                            show_actual_klocs,
+                            show_actual_loc,
+                            show_raw_klocs,
+                            show_raw_loc,
+                            show_words,
+                            show_chars,
+                            show_bytes,
+                            false,
+                            color,
+                        );
                     }
-                };
-
-                let mut items: Vec<(&String, &Stats)> = lang_map.iter().collect();
-                // Filter out languages with zero counts
-                items.retain(|(_, stats)| {
-                    stats.actual_loc > 0
-                        || stats.raw_loc > 0
-                        || stats.words > 0
-                        || stats.chars > 0
-                        || stats.bytes > 0
-                });
-                items.sort_by(|(la, sa), (lb, sb)| {
-                    let ka = first_col_value(sa);
-                    let kb = first_col_value(sb);
-                    kb.cmp(&ka).then_with(|| la.cmp(lb))
-                });
-
-                for (lang, stats) in items.into_iter() {
-                    print_stats(
-                        stats,
-                        lang,
-                        None,
-                        show_actual_klocs,
-                        show_actual_loc,
-                        show_raw_klocs,
-                        show_raw_loc,
-                        show_words,
-                        show_chars,
-                        show_bytes,
-                        false,
-                        color,
-                    );
                 }
             }
         }
@@ -487,21 +596,37 @@ fn main() {
         exclude_set: &GlobSet,
         include_set: Option<&GlobSet>,
         parent_dir_obj: Option<&Rc<DirObject>>,
+        parent_vcs: VcsType,
+        loglevel: u8,
+        ignore_cache: &mut std::collections::HashMap<PathBuf, Vec<IgnorePattern>>,
     ) -> (Stats, std::collections::HashMap<String, Stats>) {
         let mut total = Stats::default();
         let mut lang_map: std::collections::HashMap<String, Stats> =
             std::collections::HashMap::new();
-        
+
+        // Inherit VCS from parent; only re-probe locally for nested repositories
+        let vcs = detect_vcs_here(path).unwrap_or(parent_vcs);
+        let ignore_filename = get_ignore_filename(&vcs);
+
         // Create DirObject for this directory if ignorelist is enabled
         let dir_obj = if let Some(parent) = parent_dir_obj {
-            // Check if ignorelist is enabled (parent exists means it's enabled)
             let mut dir_obj = DirObject::new(path.to_path_buf(), Some(parent.clone()));
-            dir_obj.load_ignore_file(".gitignore");
+
+            // Check cache first (use VCS-specific cache key)
+            let cache_key = path.join(ignore_filename);
+            if let Some(cached_patterns) = ignore_cache.get(&cache_key) {
+                log_debug(loglevel, &format!("Using cached ignore patterns for: {:?}", path));
+                dir_obj.ignore_patterns = cached_patterns.clone();
+            } else {
+                dir_obj.load_ignore_file(ignore_filename, loglevel);
+                ignore_cache.insert(cache_key, dir_obj.ignore_patterns.clone());
+            }
+
             Some(Rc::new(dir_obj))
         } else {
             None
         };
-        
+
         let entries = match fs::read_dir(path) {
             Ok(e) => e,
             Err(_) => return (total, lang_map),
@@ -514,39 +639,56 @@ fn main() {
             if is_excluded {
                 continue;
             }
-            
-            // Check ignore list if enabled
-            if let Some(ref dir_obj) = dir_obj {
-                let is_dir_entry = p.is_dir();
-                if !dir_obj.include_test(&p, is_dir_entry) {
-                    continue;
-                }
-            }
-            
-            // Check if it's a symlink
-            let is_symlink = fs::symlink_metadata(&p)
-                .map(|m| m.file_type().is_symlink())
-                .unwrap_or(false);
-            
-            // Skip symlinks if follow_symlinks is false
+
+            // Prefer DirEntry::file_type to avoid extra stat syscalls per entry
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            let is_symlink = file_type.is_symlink();
             if is_symlink && !follow_symlinks {
                 continue;
             }
-            
-            if recursive && p.is_dir() {
-                let (dir_stats, dir_lang_map) =
-                    process_dir_lang_filtered(&p, true, follow_symlinks, exclude_set, include_set, dir_obj.as_ref());
-                total = add_stats(total, dir_stats.clone());
-                for (lang, stats) in dir_lang_map {
-                    let entry = lang_map.entry(lang).or_default();
-                    *entry = add_stats(entry.clone(), stats);
+
+            let is_dir = if is_symlink {
+                p.is_dir()
+            } else {
+                file_type.is_dir()
+            };
+            let is_file = if is_symlink {
+                p.is_file()
+            } else {
+                file_type.is_file()
+            };
+
+            // Check ignore list if enabled
+            if let Some(ref dir_obj) = dir_obj {
+                if !dir_obj.include_test(&p, is_dir) {
+                    continue;
                 }
-            } else if p.is_file() {
+            }
+
+            if recursive && is_dir {
+                let (dir_stats, dir_lang_map) = process_dir_lang_filtered(
+                    &p,
+                    true,
+                    follow_symlinks,
+                    exclude_set,
+                    include_set,
+                    dir_obj.as_ref(),
+                    vcs,
+                    loglevel,
+                    ignore_cache,
+                );
+                total.add_assign(&dir_stats);
+                for (lang, stats) in dir_lang_map {
+                    lang_map.entry(lang).or_default().add_assign(&stats);
+                }
+            } else if is_file {
                 let stats = process_file(&p);
                 let lang = detect_language(&p);
-                let entry = lang_map.entry(lang).or_default();
-                *entry = add_stats(entry.clone(), stats.clone());
-                total = add_stats(total, stats);
+                lang_map.entry(lang).or_default().add_assign(&stats);
+                total.add_assign(&stats);
             }
         }
         (total, lang_map)
@@ -560,23 +702,6 @@ fn main() {
             builder.add(g);
         }
         builder.build().unwrap()
-    }
-
-    fn glob_escape(s: &str) -> String {
-        // Escape all special glob characters
-        let mut out = String::new();
-        for c in s.chars() {
-            match c {
-                '*' | '?' | '[' | ']' | '{' | '}' | '!' | '(' | ')' | '|' | '^' | '$' | '+'
-                | '.' | '#' => {
-                    out.push('[');
-                    out.push(c);
-                    out.push(']');
-                }
-                _ => out.push(c),
-            }
-        }
-        out
     }
 }
 
@@ -1490,47 +1615,31 @@ fn print_pdf_report(
 
 // Help is now handled by clap
 
-fn add_stats(a: Stats, b: Stats) -> Stats {
-    Stats {
-        actual_loc: a.actual_loc + b.actual_loc,
-        raw_loc: a.raw_loc + b.raw_loc,
-        words: a.words + b.words,
-        chars: a.chars + b.chars,
-        bytes: a.bytes + b.bytes,
-    }
-}
-
-fn is_binary_file(path: &Path) -> bool {
-    // Read first 8KB to check for binary content
-    const SAMPLE_SIZE: usize = 8192;
-    let mut file = match File::open(path) {
-        Ok(f) => f,
-        Err(_) => return false, // If we can't open it, assume it's not binary
-    };
-    let mut buffer = vec![0u8; SAMPLE_SIZE];
-    match file.read(&mut buffer) {
-        Ok(n) => {
-            // Check for null bytes in the sample
-            buffer[..n].contains(&0)
-        }
-        Err(_) => false, // If we can't read it, assume it's not binary
-    }
-}
-
 fn process_file(path: &Path) -> Stats {
+    use std::io::Seek;
+
     let mut stats = Stats::default();
-    
-    // Skip binary files
-    if is_binary_file(path) {
-        return stats;
-    }
-    
-    let lang = detect_language(path);
-    let comment_syntax = detect_comment_syntax(&lang, path);
-    let file = match File::open(path) {
+    let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => return stats,
     };
+
+    // Binary probe on the same handle, then rewind for line counting
+    const SAMPLE_SIZE: usize = 8192;
+    let mut sample = [0u8; SAMPLE_SIZE];
+    let sample_len = match file.read(&mut sample) {
+        Ok(n) => n,
+        Err(_) => return stats,
+    };
+    if sample[..sample_len].contains(&0) {
+        return stats;
+    }
+    if file.seek(io::SeekFrom::Start(0)).is_err() {
+        return stats;
+    }
+
+    let lang = detect_language(path);
+    let comment_syntax = detect_comment_syntax(&lang, path);
     let mut reader = io::BufReader::new(file);
     let mut buf = String::new();
     let mut in_block_comment = false;
@@ -1574,4 +1683,77 @@ fn is_pure_comment(line: &str, syntax: &CommentSyntax, in_block_comment: &mut bo
         }
     }
     false
+}
+
+// Logging functions
+// Thresholds: -v enables UI verbosity (loglevel 2); diagnostics need -vv and above.
+fn log_verbose(loglevel: u8, msg: &str) {
+    if loglevel >= 3 {
+        eprintln!("[VERBOSE] {}", msg);
+    }
+}
+
+fn log_debug(loglevel: u8, msg: &str) {
+    if loglevel >= 4 {
+        eprintln!("[DEBUG] {}", msg);
+    }
+}
+
+fn log_trace(loglevel: u8, msg: &str) {
+    if loglevel >= 5 {
+        eprintln!("[TRACE] {}", msg);
+    }
+}
+
+// Version control detection
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VcsType {
+    Git,
+    Svn,
+    Hg,
+    None,
+}
+
+/// Cheap local probe: only look in `path` itself (for nested repos during a walk).
+fn detect_vcs_here(path: &Path) -> Option<VcsType> {
+    if path.join(".git").is_dir() {
+        return Some(VcsType::Git);
+    }
+    if path.join(".svn").is_dir() {
+        return Some(VcsType::Svn);
+    }
+    if path.join(".hg").is_dir() {
+        return Some(VcsType::Hg);
+    }
+    None
+}
+
+fn detect_vcs(path: &Path) -> VcsType {
+    let mut current = path;
+
+    // Check each directory in the path hierarchy
+    loop {
+        if let Some(vcs) = detect_vcs_here(current) {
+            return vcs;
+        }
+
+        // Move to parent directory
+        match current.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => {
+                current = parent;
+            }
+            _ => break,
+        }
+    }
+
+    VcsType::None
+}
+
+fn get_ignore_filename(vcs: &VcsType) -> &'static str {
+    match vcs {
+        VcsType::Git => ".gitignore",
+        VcsType::Svn => ".svnignore",
+        VcsType::Hg => ".hgignore",
+        VcsType::None => ".gitignore", // Default to gitignore
+    }
 }
