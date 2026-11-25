@@ -9,9 +9,9 @@ fn test_python_file() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("python"));
     assert!(stdout.contains("simple.py"));
-    // 2 code lines, 3 comment lines, 2 empty lines
+    // 2 code lines, 3 comment lines (incl. shebang-as-#), 2 empty lines → 8 raw
     assert!(stdout.contains("2 ")); // actual_loc
-    assert!(stdout.contains("7 ")); // raw_loc
+    assert!(stdout.contains("8 ")); // raw_loc
 }
 
 #[test]

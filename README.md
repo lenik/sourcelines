@@ -29,7 +29,8 @@ sourcelines [OPTIONS] FILES...
 - `-i`, `--ignorelist`         : Parse ignore list files (like .gitignore) [default: enabled]
 - `-I`, `--no-ignorelist`     : Do not parse ignore list files
 - `-s`, `--sum`               : Output a summary line at the end
-- `-v`, `--verbose`           : Verbose output: with -s, print all file stats; for directories, print per-language summary
+- `-v`, `--verbose`           : Verbose output: with -s, print all file stats; for directories, print per-language summary. Repeat for diagnostic logs (`-vv`, `-vvv`, …)
+- `-q`, `--quiet`             : Decrease verbosity (can be repeated)
 - `--exclude WILDCARD`        : Exclude files/directories matching these wildcard patterns (can be used multiple times)
 - `--include WILDCARD`        : Include files/directories matching these wildcard patterns (can be used multiple times)
 - `-k`, `--actual-klocs`      : Show actual KLOCs (actual lines/1000)
